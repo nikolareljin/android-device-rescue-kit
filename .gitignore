@@ -1,0 +1,58 @@
+# Local Android captures. These often contain phone numbers, account names,
+# Wi-Fi identifiers, app package state, device serials, crash contents, and paths.
+captures/
+backups/
+restore_payloads/
+*_dumps/
+analysis_kernel_logs/
+
+# Bugreports and extracted kernel/recovery artifacts.
+bugreport*.zip
+bugreport*.txt
+dumpstate*.zip
+dumpstate*.txt
+dumpstate*.log
+*.lst
+*.p
+*.html
+
+# Common adb/logcat/dumpsys outputs.
+logcat*.txt
+dropbox_*.txt
+getprop.txt
+battery.txt
+batterystats*.txt
+thermalservice.txt
+telephony*.txt
+telecom.txt
+connectivity.txt
+wifi.txt
+last_kmsg*
+last_kernel*
+last_all_history*
+
+# Archives and raw device dumps.
+*.zip
+*.gz
+*.tar
+*.tgz
+*.7z
+*.img
+*.bin
+*.dmp
+*.dump
+
+# Local editor/tool state.
+.agents/
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS noise.
+.DS_Store
+Thumbs.db
+
+# Public capture configuration.
+!config/
+!config/*.txt

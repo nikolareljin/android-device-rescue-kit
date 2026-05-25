@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+run_git_submodule_update() {
+  if [ -f .gitmodules ]; then
+    printf 'Updating git submodules...\n'
+    git submodule sync --recursive
+    git submodule update --init --recursive
+  else
+    printf 'No git submodules configured.\n'
+  fi
+}
+
+run_git_submodule_update
+
+"$ROOT/scripts/bootstrap_script_helpers.sh"
+"$ROOT/scripts/install_deps.sh"
+
+printf 'Update complete.\n'

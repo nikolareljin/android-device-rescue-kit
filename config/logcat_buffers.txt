@@ -1,0 +1,7 @@
+all
+main
+system
+events
+radio
+crash
+kernel
