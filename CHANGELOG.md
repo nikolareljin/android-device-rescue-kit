@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Improved WhatsApp backup coverage for consumer and business shared-storage media, legacy folders, local backup folders, and exported chat folders.
+- Improved Snapchat backup coverage for app media, exported media, legacy folders, and common export directories.
+- Added per-app backup notes explaining what ADB can preserve and which official in-app restore steps are still required.
+
 ## 0.1.0
 
 - Initial public toolkit for Android diagnostic dumps, data preservation, restore support, and analysis prompt generation.

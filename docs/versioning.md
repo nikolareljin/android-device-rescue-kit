@@ -29,4 +29,4 @@ Useful commands:
 
 ## Current Version
 
-`0.1.0` is the first public version of the current codebase.
+`0.1.1` is the current version of the codebase.
