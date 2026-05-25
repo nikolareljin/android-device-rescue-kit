@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --verbose
+else
+  echo "[pre-commit] gitleaks not installed; skipping local secret scan." >&2
+fi
+
+if [[ -f scripts/script-helpers/scripts/git-hooks/pre-commit ]]; then
+  bash scripts/script-helpers/scripts/git-hooks/pre-commit "$@"
+fi

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -f scripts/script-helpers/scripts/git-hooks/pre-push ]]; then
+  bash scripts/script-helpers/scripts/git-hooks/pre-push "$@"
+fi

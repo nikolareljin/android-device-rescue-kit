@@ -44,6 +44,8 @@ last_all_history*
 
 # Local editor/tool state.
 .agents/
+scripts/script-helpers/
+scripts/ci-helpers/
 .idea/
 .vscode/
 *.swp

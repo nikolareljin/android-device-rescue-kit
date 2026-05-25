@@ -4,6 +4,8 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
+Current version: `0.1.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
+
 ## What It Collects
 
 The collection script uses `adb` to gather:
@@ -49,6 +51,8 @@ Backup destinations can be any writable directory visible to the computer runnin
 ## Helper Dependency
 
 This repository expects `script-helpers` at `scripts/script-helpers`. Run `scripts/bootstrap_script_helpers.sh` to clone it. The helper repo provides dependency installation, terminal dialog sizing, OS detection, and common logging functions used by the interactive backup and restore scripts.
+
+This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./update` to install both helper repositories, host dependencies, and local git hooks. CI workflows use `ci-helpers` for PR checks, release branch version checks, release tag checks, and secret scanning.
 
 ## Privacy Rule
 
