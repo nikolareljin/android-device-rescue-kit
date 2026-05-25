@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage:
+  ./dump log [destination]
+  ./dump data [destination]
+
+Commands:
+  log   Collect Android diagnostic logs and build a triage report.
+  data  Preserve personal/shared data using the interactive backup flow.
+
+Examples:
+  ./dump log
+  ./dump log /mnt/android-dumps/s22-reboot-loop
+  ./dump data
+  ./dump data /mnt/android-backups/s22-before-reset
+EOF
+}
+
+mode="${1:-}"
+if [ -n "$mode" ]; then
+  shift
+fi
+
+case "$mode" in
+  log)
+    destination="${1:-captures/$(date +%Y%m%d-%H%M%S)}"
+    "$ROOT/tools/collect_android_dumps.sh" "$destination"
+    "$ROOT/tools/analyze_android_capture.sh" "$destination"
+    printf 'Diagnostic capture: %s\n' "$destination"
+    printf 'Triage report: %s/analysis_report.txt\n' "$destination"
+    ;;
+  data)
+    "$ROOT/tools/android_backup_dialog.sh" "$@"
+    ;;
+  -h|--help|help|'')
+    usage
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$mode" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

@@ -25,7 +25,7 @@ Install helper scripts and host dependencies:
 Enable USB debugging on the device, connect it, then run:
 
 ```bash
-tools/collect_android_dumps.sh
+./dump log
 ```
 
 The script writes to `captures/<timestamp>/`, which is ignored by git.
@@ -33,14 +33,16 @@ The script writes to `captures/<timestamp>/`, which is ignored by git.
 To analyze a capture:
 
 ```bash
-tools/analyze_android_capture.sh captures/<timestamp>
+./prompt captures/<timestamp>
 ```
 
-The analyzer extracts useful files from a bugreport zip when present, searches for common reset causes, and writes a text report into the capture directory.
+The dump command extracts useful files from a bugreport zip when present, searches for common reset causes, and writes a text report into the capture directory. The prompt command creates `analysis_prompt.md` for local or hosted model analysis.
 
 For Android dump details and configurable capture targets, see [Android Dumping](docs/android_dumping.md).
 
 For emergency user-data backup and shared-storage restore workflows, see [Backup And Restore](docs/backup_restore.md).
+
+For the full dump, preserve, and prompt workflow, see [Usage Guide](docs/usage.md).
 
 Backup destinations can be any writable directory visible to the computer running the script.
 

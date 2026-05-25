@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage:
+  ./prompt [capture-directory] [output-prompt.md]
+
+Examples:
+  ./prompt
+  ./prompt captures/20260525-133000
+  ./prompt captures/20260525-133000 /tmp/android-analysis-prompt.md
+EOF
+}
+
+find_latest_capture() {
+  find "$ROOT/captures" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr \
+    | awk 'NR == 1 {print $2}'
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+capture_dir="${1:-}"
+output_file="${2:-}"
+
+if [ -z "$capture_dir" ]; then
+  capture_dir="$(find_latest_capture)"
+fi
+
+if [ -z "$capture_dir" ]; then
+  printf 'No capture directory provided, and no captures were found under ./captures.\n\n' >&2
+  usage >&2
+  exit 1
+fi
+
+"$ROOT/tools/build_analysis_prompt.sh" "$capture_dir" "$output_file"
