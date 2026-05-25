@@ -1,0 +1,27 @@
+name: Release Tag Check
+
+on:
+  create:
+    branches:
+      - "release/*"
+  push:
+    branches:
+      - "release/*"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Bootstrap ci-helpers
+        run: ./scripts/bootstrap_ci_helpers.sh
+
+      - name: Check release VERSION
+        run: ./scripts/check_release_version.sh --branch "${GITHUB_REF_NAME:-}" --repo "${GITHUB_WORKSPACE:-}"
+
+      - name: Check release tag
+        run: ./scripts/check_release_tag.sh --branch "${GITHUB_REF_NAME:-}" --repo "${GITHUB_WORKSPACE:-}" --fetch-tags

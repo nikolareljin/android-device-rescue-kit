@@ -17,6 +17,11 @@ run_git_submodule_update() {
 run_git_submodule_update
 
 "$ROOT/scripts/bootstrap_script_helpers.sh"
+"$ROOT/scripts/bootstrap_ci_helpers.sh"
 "$ROOT/scripts/install_deps.sh"
+
+if [ -f "$ROOT/scripts/script-helpers/scripts/setup-hooks.sh" ]; then
+  bash "$ROOT/scripts/script-helpers/scripts/setup-hooks.sh"
+fi
 
 printf 'Update complete.\n'

@@ -1,0 +1,13 @@
+name: PR
+
+on:
+  pull_request:
+
+jobs:
+  gate:
+    uses: nikolareljin/ci-helpers/.github/workflows/pr-gate.yml@production
+    with:
+      lint_command: "find . -path ./.git -prune -o -path ./scripts/script-helpers -prune -o -path ./scripts/ci-helpers -prune -o -type f -name '*.sh' -print0 | xargs -0 -r bash -n && bash -n dump prompt update"
+      test_command: "./prompt --help && ./dump --help"
+      check_release_tag: true
+      release_branch: ${{ github.head_ref }}

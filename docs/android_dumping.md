@@ -6,7 +6,7 @@ The collection workflow is intended for unstable devices that still answer ADB c
 
 ```bash
 ./update
-tools/collect_android_dumps.sh
+./dump log
 ```
 
 The output goes to `captures/<timestamp>/` by default.
@@ -14,7 +14,7 @@ The output goes to `captures/<timestamp>/` by default.
 To write to a specific mounted destination:
 
 ```bash
-tools/collect_android_dumps.sh /mnt/android-dumps/s22-reboot-loop
+./dump log /mnt/android-dumps/s22-reboot-loop
 ```
 
 ## What To Capture
