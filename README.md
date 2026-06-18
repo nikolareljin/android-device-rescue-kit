@@ -79,3 +79,11 @@ git check-ignore -v captures/* s22_dumps/* analysis_kernel_logs/*
 Recommended public repository name: `android-device-rescue-kit`.
 
 It is broad enough for backup/restore and performance triage, but still clear that this is an Android device recovery and debugging toolkit.
+
+---
+
+## Clone traffic
+
+![Clone traffic](https://raw.githubusercontent.com/nikolareljin/stats/main/charts/android-device-rescue-kit.svg)
+
+_Updated daily. Total and unique cloners over the last 14 days._
