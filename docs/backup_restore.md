@@ -62,7 +62,7 @@ The restore script pushes selected shared-storage folders back to `/sdcard`. Ins
 
 ## Recovery Profile (opt-in)
 
-For Android phones only, add `--recovery-profile` to preserve an owner-approved recovery profile alongside the ordinary shared-storage backup:
+For Android phones only, select **Recovery profile** in the Android Backup checklist, or add `--recovery-profile` to preselect it from the command line:
 
 ```bash
 ./dump data /mnt/android-backups/phone-before-reset --recovery-profile

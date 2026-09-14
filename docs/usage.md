@@ -60,7 +60,7 @@ Run the backup workflow:
 ./dump data
 ```
 
-The dialog lets you choose:
+The dialog lets you choose (including an opt-in Recovery profile item):
 
 - Project-local backup directory
 - Any custom writable destination directory visible to the computer

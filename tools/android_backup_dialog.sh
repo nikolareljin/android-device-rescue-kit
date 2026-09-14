@@ -23,6 +23,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+RECOVERY_PROFILE_DEFAULT="off"
+if [ "$RECOVERY_PROFILE" -eq 1 ]; then
+  RECOVERY_PROFILE_DEFAULT="on"
+fi
 
 select_backup_root() {
   if [ -n "${1:-}" ]; then
@@ -238,6 +242,7 @@ CHOICES=$(dialog --stdout --separate-output \
   screenshots "Screenshots and screen recordings" on \
   music "Music, podcasts, ringtones, notifications" off \
   app_inventory "Installed app inventory, permissions, device properties" on \
+  recovery_profile "Recovery profile: settings, networks, app guidance, owner-exported credentials" "$RECOVERY_PROFILE_DEFAULT" \
   adb_backup "Try deprecated adb backup for app data where still allowed" off)
 
 if [ $? -ne 0 ]; then
@@ -279,6 +284,9 @@ for choice in $CHOICES; do
       capture_text packages_all.txt adb shell cmd package list packages -f
       capture_text permissions.txt adb shell dumpsys package
       capture_text accounts_redaction_warning.txt printf 'Account details are intentionally not collected by this script.\n'
+      ;;
+    recovery_profile)
+      RECOVERY_PROFILE=1
       ;;
     adb_backup)
       print_warning 'Trying deprecated adb backup. Confirm on the phone if prompted.'
