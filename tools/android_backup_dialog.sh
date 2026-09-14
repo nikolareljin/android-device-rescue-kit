@@ -177,7 +177,7 @@ collect_recovery_profile() {
   capture_text recovery_profile/networks.txt adb shell dumpsys wifi
   capture_text recovery_profile/connectivity.txt adb shell dumpsys connectivity
   capture_text recovery_profile/bluetooth.txt adb shell dumpsys bluetooth_manager
-  capture_text recovery_profile/apps.txt adb shell cmd package list packages -3
+  capture_text recovery_profile/apps.txt adb shell cmd package list packages
   printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
   if grep -Fx "package:com.android.chrome" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then
     printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
@@ -189,7 +189,10 @@ collect_recovery_profile() {
   if adb shell "su -c id" >/dev/null 2>&1; then
     dialog --defaultno --title "Root-only System Sources" --yesno "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
       for source_path in /data/misc/apexdata/com.android.wifi/WifiConfigStore.xml /data/misc/wifi/WifiConfigStore.xml; do
-        target_path="$profile_root/root_system/$(basename "$source_path")"
+        case "$source_path" in
+          /data/misc/apexdata/*) target_path="$profile_root/root_system/WifiConfigStore.apex.xml" ;;
+          *) target_path="$profile_root/root_system/WifiConfigStore.legacy.xml" ;;
+        esac
         if adb shell "su -c test\ -r\ $source_path" >/dev/null 2>&1; then adb exec-out su -c "cat $source_path" >"$target_path" 2>"$target_path.stderr" && chmod 600 "$target_path" && log_manifest "OK root system source $source_path"; else log_manifest "UNAVAILABLE root system source $source_path"; fi
       done
     }
@@ -212,12 +215,19 @@ collect_recovery_profile() {
     else log_manifest "FAILED credential export $export_path"; fi
   elif [ -n "$export_path" ]; then log_manifest "MISSING credential export $export_path"; fi
   require_tool gpg || { log_manifest "FAILED recovery profile encryption: gpg unavailable"; return 0; }
-  passphrase=$(dialog --stdout --insecure --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
-  confirmation=$(dialog --stdout --insecure --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
+  passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
+  confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
   if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 0; fi
   if tar -C "$BACKUP_ROOT" -cf - recovery_profile | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg"; else log_manifest "FAILED recovery profile encryption"; fi
   unset passphrase confirmation
-  if [ -f "$profile_root/credentials.txt" ]; then dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; if [ $? -ne 0 ]; then rm -f "$profile_root/credentials.txt" "$profile_root"/imports/*; log_manifest "REMOVED plaintext credential files after encryption"; else log_manifest "RETAINED plaintext credentials by owner confirmation"; fi; fi
+  if [ -f "$profile_root/credentials.txt" ]; then
+    if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
+      log_manifest "RETAINED plaintext credentials by owner confirmation"
+    else
+      rm -f "$profile_root/credentials.txt" "$profile_root"/imports/*
+      log_manifest "REMOVED plaintext credential files after encryption"
+    fi
+  fi
 }
 adb start-server
 print_info 'Waiting for device...'
