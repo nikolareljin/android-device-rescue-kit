@@ -73,6 +73,14 @@ The dialog lets you choose:
 - App inventory and device metadata
 - Deprecated `adb backup` attempt, where still supported
 
+To include the opt-in recovery profile (settings, network details, detected-app recovery guidance, and an owner-selected password-manager export):
+
+```bash
+./dump data /mnt/android-backups/s22-before-reset --recovery-profile
+```
+
+An encrypted profile archive is always created when encryption succeeds; the readable credential TXT copy is retained only after an explicit confirmation.
+
 To pass a destination directly:
 
 ```bash

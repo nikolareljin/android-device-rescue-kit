@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Added the opt-in `./dump data --recovery-profile` workflow for local Android recovery settings, network details, owner-exported password-manager CSV files, and installed-app recovery guidance.
+- Added passphrase-encrypted recovery-profile archives and an explicit plaintext-credential retention prompt.
+- Added limited, consented root-only collection of known readable Android Wi-Fi system records; private app databases remain out of scope.
+
 ## 0.1.1
 
 - Improved WhatsApp backup coverage for consumer and business shared-storage media, legacy folders, local backup folders, and exported chat folders.

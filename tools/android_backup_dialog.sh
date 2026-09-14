@@ -12,6 +12,17 @@ MESSAGE_WIDTH=$((DIALOG_WIDTH < 74 ? DIALOG_WIDTH : 74))
 LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+RECOVERY_PROFILE=0
+BACKUP_DESTINATION=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --recovery-profile) RECOVERY_PROFILE=1 ;;
+    -h|--help) printf "Usage: %s [destination] [--recovery-profile]\n" "$0"; exit 0 ;;
+    --*) print_error "Unknown option: $1"; exit 1 ;;
+    *) [ -z "$BACKUP_DESTINATION" ] || { print_error "Only one backup destination may be supplied."; exit 1; }; BACKUP_DESTINATION="$1" ;;
+  esac
+  shift
+done
 
 select_backup_root() {
   if [ -n "${1:-}" ]; then
@@ -51,7 +62,7 @@ select_backup_root() {
   esac
 }
 
-BACKUP_ROOT="$(select_backup_root "${1:-}")" || {
+BACKUP_ROOT="$(select_backup_root "$BACKUP_DESTINATION")" || {
   print_warning 'Backup cancelled.'
   exit 1
 }
@@ -88,6 +99,7 @@ pull_path() {
 
 capture_text() {
   local name="$1"
+  mkdir -p "$(dirname "$BACKUP_ROOT/device/$name")"
   shift
   if "$@" >"$BACKUP_ROOT/device/$name" 2>"$BACKUP_ROOT/device/$name.stderr"; then
     log_manifest "OK device/$name"
@@ -150,6 +162,59 @@ backup_snapchat() {
     "If you downloaded a Snapchat My Data archive to Downloads, also select Downloads in this backup workflow."
 }
 
+collect_recovery_profile() {
+  local profile_root="$BACKUP_ROOT/recovery_profile" export_path imported_path passphrase confirmation
+  mkdir -p "$profile_root/imports" "$profile_root/root_system"
+  chmod 700 "$profile_root" "$profile_root/imports" "$profile_root/root_system"
+  dialog --defaultno --title "Recovery Profile Consent" --yesno "This optional profile may contain passwords, network details, settings, and app inventory. Continue only for a phone you own or are authorized to recover." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" || { log_manifest "SKIPPED recovery profile: consent declined"; return 0; }
+  capture_text recovery_profile/settings_system.txt adb shell settings list system
+  capture_text recovery_profile/settings_secure.txt adb shell settings list secure
+  capture_text recovery_profile/settings_global.txt adb shell settings list global
+  capture_text recovery_profile/networks.txt adb shell dumpsys wifi
+  capture_text recovery_profile/connectivity.txt adb shell dumpsys connectivity
+  capture_text recovery_profile/bluetooth.txt adb shell dumpsys bluetooth_manager
+  capture_text recovery_profile/apps.txt adb shell cmd package list packages -3
+  printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
+  if grep -Fx "package:com.android.chrome" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then
+    printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
+  fi
+  for app in com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
+    if grep -Fx "package:$app" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
+  done
+  chmod 600 "$profile_root/recovery_actions.txt"
+  if adb shell "su -c id" >/dev/null 2>&1; then
+    dialog --defaultno --title "Root-only System Sources" --yesno "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
+      for source_path in /data/misc/apexdata/com.android.wifi/WifiConfigStore.xml /data/misc/wifi/WifiConfigStore.xml; do
+        target_path="$profile_root/root_system/$(basename "$source_path")"
+        if adb shell "su -c test\ -r\ $source_path" >/dev/null 2>&1; then adb exec-out su -c "cat $source_path" >"$target_path" 2>"$target_path.stderr" && chmod 600 "$target_path" && log_manifest "OK root system source $source_path"; else log_manifest "UNAVAILABLE root system source $source_path"; fi
+      done
+    }
+  else
+    log_manifest "SKIPPED root-only system sources: root unavailable"
+  fi
+  dialog --defaultno --title "Open Recovery Apps" --yesno "Open detected recovery apps for owner-approved export or transfer? The tool will never enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
+    for app in com.android.chrome com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
+      if grep -Fx "package:$app" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
+    done
+  }
+  export_path=$(dialog --stdout --title "Credential Export" --inputbox "Enter the exact phone path of an owner-exported password CSV, or leave empty to skip. Example: /sdcard/Download/passwords.csv" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "/sdcard/Download/passwords.csv") || export_path=""
+  if [ -n "$export_path" ] && adb_shell_exists "$export_path"; then
+    imported_path="$profile_root/imports/$(basename "$export_path")"
+    if adb pull -a "$export_path" "$imported_path"; then
+      chmod 600 "$imported_path"
+      { printf "%s\n\n" "Android recovery credentials" "Keep this file private. It contains plaintext passwords."; tail -n +2 "$imported_path" | while IFS=, read -r site username password; do printf "Service/Site: %s\nUsername: %s\nPassword: %s\n\n" "$site" "$username" "$password"; done; } >"$profile_root/credentials.txt"
+      chmod 600 "$profile_root/credentials.txt"
+      log_manifest "OK owner-exported credentials $export_path"
+    else log_manifest "FAILED credential export $export_path"; fi
+  elif [ -n "$export_path" ]; then log_manifest "MISSING credential export $export_path"; fi
+  require_tool gpg || { log_manifest "FAILED recovery profile encryption: gpg unavailable"; return 0; }
+  passphrase=$(dialog --stdout --insecure --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
+  confirmation=$(dialog --stdout --insecure --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
+  if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 0; fi
+  if tar -C "$BACKUP_ROOT" -cf - recovery_profile | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg"; else log_manifest "FAILED recovery profile encryption"; fi
+  unset passphrase confirmation
+  if [ -f "$profile_root/credentials.txt" ]; then dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; if [ $? -ne 0 ]; then rm -f "$profile_root/credentials.txt" "$profile_root"/imports/*; log_manifest "REMOVED plaintext credential files after encryption"; else log_manifest "RETAINED plaintext credentials by owner confirmation"; fi; fi
+}
 adb start-server
 print_info 'Waiting for device...'
 adb wait-for-device
@@ -225,6 +290,10 @@ for choice in $CHOICES; do
       ;;
   esac
 done
+
+if [ "$RECOVERY_PROFILE" -eq 1 ]; then
+  collect_recovery_profile
+fi
 
 cat >>"$MANIFEST" <<EOF
 

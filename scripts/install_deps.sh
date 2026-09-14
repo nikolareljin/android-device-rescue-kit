@@ -14,10 +14,10 @@ shlib_import deps os logging
 
 case "$(get_os)" in
   linux)
-    install_dependencies android-tools-adb dialog ripgrep unzip gzip coreutils
+    install_dependencies android-tools-adb dialog ripgrep unzip gzip coreutils gnupg
     ;;
   mac)
-    install_dependencies android-platform-tools dialog ripgrep unzip gzip coreutils
+    install_dependencies android-platform-tools dialog ripgrep unzip gzip coreutils gnupg
     ;;
   *)
     print_error "Unsupported OS. Install adb, dialog, ripgrep, unzip, and gzip manually."
