@@ -100,8 +100,12 @@ write_app_note() {
   local name="$1"
   shift
   mkdir -p "$BACKUP_ROOT/app_notes"
-  printf '%s\n' "$@" >"$BACKUP_ROOT/app_notes/$name.txt"
-  log_manifest "OK app_notes/$name.txt"
+  if printf '%s\n' "$@" >"$BACKUP_ROOT/app_notes/$name.txt"
+  then
+    log_manifest "OK app_notes/$name.txt"
+  else
+    log_manifest "FAILED app_notes/$name.txt"
+  fi
 }
 
 backup_whatsapp() {

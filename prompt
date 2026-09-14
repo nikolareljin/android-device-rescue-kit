@@ -16,9 +16,14 @@ EOF
 }
 
 find_latest_capture() {
-  find "$ROOT/captures" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null \
-    | sort -nr \
-    | awk 'NR == 1 {print $2}'
+  local latest="" candidate
+  for candidate in "$ROOT"/captures/*/; do
+    [ -d "$candidate" ] || continue
+    if [ -z "$latest" ] || [ "$candidate" -nt "$latest" ]; then
+      latest="$candidate"
+    fi
+  done
+  printf "%s\n" "$latest"
 }
 
 case "${1:-}" in
