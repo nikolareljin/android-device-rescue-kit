@@ -4,7 +4,7 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.1.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
+Current version: `0.1.1`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
 ## What It Collects
 

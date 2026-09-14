@@ -96,6 +96,60 @@ capture_text() {
   fi
 }
 
+write_app_note() {
+  local name="$1"
+  shift
+  mkdir -p "$BACKUP_ROOT/app_notes"
+  if printf '%s\n' "$@" >"$BACKUP_ROOT/app_notes/$name.txt"
+  then
+    log_manifest "OK app_notes/$name.txt"
+  else
+    log_manifest "FAILED app_notes/$name.txt"
+  fi
+}
+
+backup_whatsapp() {
+  pull_path /sdcard/Android/media/com.whatsapp/WhatsApp Android_media_com_whatsapp_WhatsApp
+  pull_path /sdcard/Android/media/com.whatsapp.w4b/WhatsApp Android_media_com_whatsapp_w4b_WhatsApp
+  pull_path "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business" Android_media_com_whatsapp_w4b_WhatsApp_Business
+  pull_path /sdcard/WhatsApp WhatsApp_legacy
+  pull_path "/sdcard/WhatsApp Business" WhatsApp_Business_legacy
+  pull_path /sdcard/Download/WhatsApp Download_WhatsApp
+  pull_path /sdcard/Documents/WhatsApp Documents_WhatsApp
+
+  write_app_note whatsapp \
+    "WhatsApp backup notes" \
+    "" \
+    "ADB preserved shared-storage WhatsApp folders when present." \
+    "This can include visible media, local backup database files, and exported chat archives." \
+    "" \
+    "ADB usually cannot copy WhatsApp private app data from /data/data on an unrooted phone." \
+    "For reliable chat restore, also use WhatsApp's built-in chat transfer or encrypted cloud backup before wiping the device." \
+    "" \
+    "After restoring files, install WhatsApp, verify the same phone number/account, then use WhatsApp's official restore flow."
+}
+
+backup_snapchat() {
+  pull_path /sdcard/Android/media/com.snapchat.android Android_media_com_snapchat_android
+  pull_path /sdcard/DCIM/Snapchat DCIM_Snapchat
+  pull_path /sdcard/Pictures/Snapchat Pictures_Snapchat
+  pull_path /sdcard/Movies/Snapchat Movies_Snapchat
+  pull_path /sdcard/Download/Snapchat Download_Snapchat
+  pull_path /sdcard/Documents/Snapchat Documents_Snapchat
+  pull_path /sdcard/Snapchat Snapchat_legacy
+
+  write_app_note snapchat \
+    "Snapchat backup notes" \
+    "" \
+    "ADB preserved shared-storage Snapchat folders when present." \
+    "This can include exported photos, exported videos, and app media visible under shared storage." \
+    "" \
+    "ADB usually cannot copy Snapchat private app data, chats, or unsynced Memories from /data/data on an unrooted phone." \
+    "Before wiping the device, open Snapchat and verify Memories are backed up/synced, or export important Memories to camera roll/shared storage." \
+    "" \
+    "If you downloaded a Snapchat My Data archive to Downloads, also select Downloads in this backup workflow."
+}
+
 adb start-server
 print_info 'Waiting for device...'
 adb wait-for-device
@@ -138,14 +192,10 @@ for choice in $CHOICES; do
       pull_path /sdcard/Documents Documents
       ;;
     whatsapp)
-      pull_path /sdcard/Android/media/com.whatsapp/WhatsApp Android_media_com_whatsapp_WhatsApp
-      pull_path /sdcard/WhatsApp WhatsApp_legacy
+      backup_whatsapp
       ;;
     snapchat)
-      pull_path /sdcard/DCIM/Snapchat DCIM_Snapchat
-      pull_path /sdcard/Pictures/Snapchat Pictures_Snapchat
-      pull_path /sdcard/Movies/Snapchat Movies_Snapchat
-      pull_path /sdcard/Snapchat Snapchat_legacy
+      backup_snapchat
       ;;
     screenshots)
       pull_path /sdcard/Pictures/Screenshots Pictures_Screenshots

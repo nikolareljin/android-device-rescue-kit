@@ -31,6 +31,10 @@ tools/android_backup_dialog.sh
 
 The script writes to `backups/<timestamp>/`, which is ignored by git.
 
+For WhatsApp, the script preserves consumer and business shared-storage folders when present, including Android media folders, legacy folders, local backup folders, and common exported-chat folders. It still cannot guarantee private chat database preservation from an unrooted phone; use WhatsApp's official transfer or backup flow before wiping.
+
+For Snapchat, the script preserves shared-storage app media and exported media folders when present. It cannot guarantee private chats or unsynced Memories; verify sync/export inside Snapchat before wiping.
+
 The script also lets you choose a custom destination. Use any writable directory visible to the computer running the script, including already mounted external storage or network storage:
 
 ```bash

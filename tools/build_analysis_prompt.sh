@@ -50,7 +50,7 @@ append_section() {
   printf 'Capture directory: `%s`\n\n' "$CAPTURE_DIR"
   printf 'Generated: `%s`\n\n' "$(date -Iseconds)"
   printf '## Available Files\n\n'
-  find "$CAPTURE_DIR" -maxdepth 3 -type f -printf '%p\t%s bytes\n' 2>/dev/null | sort | head -n 300
+  find "$CAPTURE_DIR" -maxdepth 3 -type f -print 2>/dev/null
 } >"$OUTPUT_FILE"
 
 if [ -f "$REPORT" ]; then

@@ -22,10 +22,12 @@ push_if_present() {
   local source_name="$1"
   local dest_path="$2"
   local source_path="$BACKUP_ROOT/shared/$source_name"
+  local remote_dest
 
   if [ -e "$source_path" ]; then
     print_info "Restoring $source_path -> $dest_path"
-    adb shell mkdir -p "$dest_path" >/dev/null 2>&1 || true
+    remote_dest="$(printf "%s" "$dest_path" | sed "s/'/'\\\\''/g")"
+    adb shell "mkdir -p '$remote_dest'" >/dev/null 2>&1 || true
     adb push "$source_path/." "$dest_path/"
   else
     print_warning "Skipping missing backup item: $source_name"
@@ -65,12 +67,20 @@ for choice in $CHOICES; do
       ;;
     whatsapp)
       push_if_present Android_media_com_whatsapp_WhatsApp /sdcard/Android/media/com.whatsapp/WhatsApp
+      push_if_present Android_media_com_whatsapp_w4b_WhatsApp /sdcard/Android/media/com.whatsapp.w4b/WhatsApp
+      push_if_present Android_media_com_whatsapp_w4b_WhatsApp_Business "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business"
       push_if_present WhatsApp_legacy /sdcard/WhatsApp
+      push_if_present WhatsApp_Business_legacy "/sdcard/WhatsApp Business"
+      push_if_present Download_WhatsApp /sdcard/Download/WhatsApp
+      push_if_present Documents_WhatsApp /sdcard/Documents/WhatsApp
       ;;
     snapchat)
+      push_if_present Android_media_com_snapchat_android /sdcard/Android/media/com.snapchat.android
       push_if_present DCIM_Snapchat /sdcard/DCIM/Snapchat
       push_if_present Pictures_Snapchat /sdcard/Pictures/Snapchat
       push_if_present Movies_Snapchat /sdcard/Movies/Snapchat
+      push_if_present Download_Snapchat /sdcard/Download/Snapchat
+      push_if_present Documents_Snapchat /sdcard/Documents/Snapchat
       push_if_present Snapchat_legacy /sdcard/Snapchat
       ;;
     screenshots)

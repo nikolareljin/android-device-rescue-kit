@@ -9,7 +9,7 @@ on:
 
 jobs:
   gitleaks:
-    uses: nikolareljin/ci-helpers/.github/workflows/gitleaks-scan.yml@production
+    uses: nikolareljin/ci-helpers/.github/workflows/gitleaks-scan.yml@99ff8e3313bd53aede98d8e81fd7afaca4eb9b8b
     with:
       scan_path: "."
       report_format: sarif
