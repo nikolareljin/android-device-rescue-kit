@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Android Device Rescue Kit logo</title>
+  <desc id="desc">A lime Android recovery head and command prompt on a deep green rounded square.</desc>
+  <defs>
+    <linearGradient id="background" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="#17483f"/><stop offset="1" stop-color="#071918"/></linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#background)"/>
+  <circle cx="97" cy="31" r="23" fill="#baff71" opacity=".12"/>
+  <path d="M37 57h54v30a12 12 0 0 1-12 12H49a12 12 0 0 1-12-12V57Z" fill="#baff71"/>
+  <path d="M43 54 34 42M85 54l9-12" stroke="#baff71" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="54" cy="73" r="4" fill="#12332d"/><circle cx="74" cy="73" r="4" fill="#12332d"/>
+  <path d="M20 93h20m-10-10v20" stroke="#baff71" stroke-width="6" stroke-linecap="round"/>
+  <path d="M94 96h13" stroke="#83bfa0" stroke-width="5" stroke-linecap="round"/>
+</svg>
