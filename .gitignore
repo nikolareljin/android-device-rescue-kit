@@ -61,3 +61,8 @@ Thumbs.db
 # Public capture configuration.
 !config/
 !config/*.txt
+
+# GitHub Pages source assets. Keep raw captured HTML ignored.
+!docs/index.html
+!docs/assets/
+!docs/assets/site.css
