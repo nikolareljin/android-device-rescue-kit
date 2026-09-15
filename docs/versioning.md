@@ -29,4 +29,4 @@ Useful commands:
 
 ## Current Version
 
-`0.2.0` adds the opt-in recovery profile workflow; `0.1.0` was the first public version of the current codebase.
+`0.3.0` adds cross-platform installers; `0.2.0` adds the opt-in recovery profile workflow; `0.1.0` was the first public version of the current codebase.

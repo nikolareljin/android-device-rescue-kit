@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Added one-line installers for Linux, macOS, and Windows through WSL 2.
+- Added stable `android-rescue-dump`, `android-rescue-prompt`, and `android-rescue-update` launchers for direct Unix installs.
+- Documented platform setup, Windows path handling, and installer update behavior.
+
 ## 0.2.0
 
 - Added the opt-in `./dump data --recovery-profile` workflow for local Android recovery settings, network details, owner-exported password-manager CSV files, and installed-app recovery guidance.

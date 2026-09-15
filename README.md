@@ -4,7 +4,7 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.2.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
+Current version: `0.3.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
 ## Documentation Site
 
@@ -19,6 +19,16 @@ The collection script uses `adb` to gather:
 - `logcat` from all, radio, crash, events, kernel, and main buffers where available
 - Dropbox reset/crash entries such as `SYSTEM_LAST_KMSG`, tombstones, watchdogs, and boot records
 - Battery, thermal, telephony, telecom, connectivity, Wi-Fi, activity, package, and disk stats
+
+## Install
+
+Install from Linux or macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash
+```
+
+For Windows through WSL 2, use the PowerShell one-liner and platform notes in [Installation](docs/installation.md).
 
 ## Quick Start
 
