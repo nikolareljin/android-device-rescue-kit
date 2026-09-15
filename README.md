@@ -4,7 +4,7 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.1.1`. Versioning rules are documented in [Versioning](docs/versioning.md).
+Current version: `0.2.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
 ## What It Collects
 
@@ -43,6 +43,8 @@ The dump command extracts useful files from a bugreport zip when present, search
 For Android dump details and configurable capture targets, see [Android Dumping](docs/android_dumping.md).
 
 For emergency user-data backup and shared-storage restore workflows, see [Backup And Restore](docs/backup_restore.md).
+
+Use `./dump data [destination] --recovery-profile` for an opt-in encrypted recovery profile containing available settings, network details, installed-app guidance, and owner-exported password-manager data. It never bypasses Android or app security controls.
 
 For the full dump, preserve, and prompt workflow, see [Usage Guide](docs/usage.md).
 

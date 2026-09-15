@@ -2,6 +2,9 @@
 # Wi-Fi identifiers, app package state, device serials, crash contents, and paths.
 captures/
 backups/
+recovery_profile/
+recovery-profile.tar.gpg
+credentials.txt
 restore_payloads/
 *_dumps/
 analysis_kernel_logs/

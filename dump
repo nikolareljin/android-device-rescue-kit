@@ -7,17 +7,19 @@ usage() {
   cat <<EOF
 Usage:
   ./dump log [destination]
-  ./dump data [destination]
+  ./dump data [destination] [--recovery-profile]
 
 Commands:
   log   Collect Android diagnostic logs and build a triage report.
   data  Preserve personal/shared data using the interactive backup flow.
+        Add --recovery-profile for settings, networks, and owner-exported credentials.
 
 Examples:
   ./dump log
   ./dump log /mnt/android-dumps/s22-reboot-loop
   ./dump data
   ./dump data /mnt/android-backups/s22-before-reset
+  ./dump data /mnt/android-backups/s22-before-reset --recovery-profile
 EOF
 }
 

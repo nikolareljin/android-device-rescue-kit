@@ -59,3 +59,17 @@ tools/android_restore_dialog.sh backups/<timestamp>
 ```
 
 The restore script pushes selected shared-storage folders back to `/sdcard`. Install and sign in to sensitive apps before expecting their cloud or official transfer mechanisms to finish restoring private content.
+
+## Recovery Profile (opt-in)
+
+For Android phones only, select **Recovery profile** in the Android Backup checklist, or add `--recovery-profile` to preselect it from the command line:
+
+```bash
+./dump data /mnt/android-backups/phone-before-reset --recovery-profile
+```
+
+The profile collects available network and settings information, an installed-app inventory, and owner-selected password-manager CSV exports. It can open detected recovery apps, but it never enters secrets, defeats device or app protections, or approves export prompts. On rooted phones it can optionally copy only known readable Android Wi-Fi system records; it does not scan app-private databases.
+
+The tool creates an encrypted profile archive at `recovery-profile.tar.gpg`. The readable `recovery_profile/credentials.txt` preserves the selected CSV content without transforming credential fields. Each run asks whether to retain it; choose No unless an offline plaintext recovery copy is explicitly needed. Keep the archive passphrase separate from the backup. Authenticator seeds, passkeys, banking credentials, and provider-controlled recovery data require that providers official transfer or export flow.
+
+Google Password Manager exports require owner authentication on the phone. After exporting, supply the exact phone path of the CSV when prompted. The tool copies only that selected file; it does not search the phone for credentials.
