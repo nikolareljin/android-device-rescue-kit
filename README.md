@@ -1,10 +1,18 @@
 # Android Device Rescue Kit
 
+<p align="center">
+  <img src="docs/assets/logo.svg" width="88" alt="Android Device Rescue Kit logo">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="Android Device Rescue Kit showing an Android phone and local recovery terminal" width="960">
+</p>
+
 `android-device-rescue-kit` is a small field toolkit for collecting, backing up, restoring, and triaging Android devices with failures such as reboot loops, kernel panics, watchdog resets, severe performance problems, radio crashes, and storage-related instability.
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.3.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
+Current version: `0.3.1`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
 ## Documentation Site
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Added a reusable SVG logo and README hero image for the Android rescue workflow.
+
 ## 0.3.0
 
 - Added one-line installers for Linux, macOS, and Windows through WSL 2.
