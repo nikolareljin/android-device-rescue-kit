@@ -41,13 +41,21 @@ Complete the Linux first-run setup, then run this one line in PowerShell:
 irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1 | iex
 ```
 
-Run the same commands through WSL. Use `/mnt/c/...` for a Windows drive:
+Run the commands through a Linux shell. Use `/mnt/c/...` for a Windows drive:
 
 ```powershell
-wsl ~/.local/bin/android-rescue-dump --help
-wsl ~/.local/bin/android-rescue-dump data /mnt/c/AndroidBackups
-wsl ~/.local/bin/android-rescue-prompt /mnt/c/AndroidCaptures/example
+wsl bash -lc '~/.local/bin/android-rescue-dump --help'
+wsl bash -lc '~/.local/bin/android-rescue-dump data /mnt/c/AndroidBackups'
+wsl bash -lc '~/.local/bin/android-rescue-prompt /mnt/c/AndroidCaptures/example'
 ```
+
+### Connect an Android phone from WSL
+
+WSL 2 needs USB passthrough before its `adb` can see a phone connected by USB. Install
+`usbipd-win`, then in an elevated PowerShell window run `usbipd list`, bind the phone
+with `usbipd bind --busid <BUSID>`, and attach it with
+`usbipd attach --wsl --busid <BUSID>`. In WSL, verify the phone with `adb devices`
+before starting a backup.
 
 ## Commands
 
@@ -65,12 +73,10 @@ confirm it appears in `adb devices` before starting a capture or backup. See the
 ## Updating or relocating the installation
 
 Run the installer again to perform a fast-forward update. To choose another repository
-or launcher directory, set these environment variables before running it:
+or launcher directory, set these environment variables for `bash`:
 
 ```bash
-ANDROID_RESCUE_INSTALL_DIR=/opt/android-rescue \
-ANDROID_RESCUE_BIN_DIR="$HOME/.local/bin" \
-curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | ANDROID_RESCUE_INSTALL_DIR=/opt/android-rescue ANDROID_RESCUE_BIN_DIR="$HOME/.local/bin" bash
 ```
 
 The installer refuses to replace an existing non-git directory and does not overwrite
