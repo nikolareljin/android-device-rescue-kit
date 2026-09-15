@@ -171,6 +171,10 @@ collect_recovery_profile() {
   mkdir -p "$profile_root/imports" "$profile_root/root_system"
   chmod 700 "$profile_root" "$profile_root/imports" "$profile_root/root_system"
   dialog --defaultno --title "Recovery Profile Consent" --yesno "This optional profile may contain passwords, network details, settings, and app inventory. Continue only for a phone you own or are authorized to recover." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" || { log_manifest "SKIPPED recovery profile: consent declined"; return 0; }
+  if ! require_tool gpg; then
+    log_manifest "SKIPPED recovery profile: gpg unavailable"
+    return 1
+  fi
   capture_text recovery_profile/settings_system.txt adb shell settings list system
   capture_text recovery_profile/settings_secure.txt adb shell settings list secure
   capture_text recovery_profile/settings_global.txt adb shell settings list global
@@ -178,12 +182,14 @@ collect_recovery_profile() {
   capture_text recovery_profile/connectivity.txt adb shell dumpsys connectivity
   capture_text recovery_profile/bluetooth.txt adb shell dumpsys bluetooth_manager
   capture_text recovery_profile/apps.txt adb shell cmd package list packages
+  mv "$BACKUP_ROOT/device/recovery_profile/"* "$profile_root/"
+  find "$profile_root" -maxdepth 1 -type f -exec chmod 600 {} +
   printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
-  if grep -Fx "package:com.android.chrome" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then
+  if grep -Fx "package:com.android.chrome" "$profile_root/apps.txt" >/dev/null 2>&1; then
     printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
   fi
   for app in com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-    if grep -Fx "package:$app" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
+    if grep -Fx "package:$app" "$profile_root/apps.txt" >/dev/null 2>&1; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
   done
   chmod 600 "$profile_root/recovery_actions.txt"
   if adb shell "su -c id" >/dev/null 2>&1; then
@@ -201,7 +207,7 @@ collect_recovery_profile() {
   fi
   dialog --defaultno --title "Open Recovery Apps" --yesno "Open detected recovery apps for owner-approved export or transfer? The tool will never enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
     for app in com.android.chrome com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-      if grep -Fx "package:$app" "$BACKUP_ROOT/device/recovery_profile/apps.txt" >/dev/null 2>&1; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
+      if grep -Fx "package:$app" "$profile_root/apps.txt" >/dev/null 2>&1; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
     done
   }
   export_path=$(dialog --stdout --title "Credential Export" --inputbox "Enter the exact phone path of an owner-exported password CSV, or leave empty to skip. Example: /sdcard/Download/passwords.csv" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "/sdcard/Download/passwords.csv") || export_path=""
@@ -209,16 +215,18 @@ collect_recovery_profile() {
     imported_path="$profile_root/imports/$(basename "$export_path")"
     if adb pull -a "$export_path" "$imported_path"; then
       chmod 600 "$imported_path"
-      { printf "%s\n\n" "Android recovery credentials" "Keep this file private. It contains plaintext passwords."; tail -n +2 "$imported_path" | while IFS=, read -r site username password; do printf "Service/Site: %s\nUsername: %s\nPassword: %s\n\n" "$site" "$username" "$password"; done; } >"$profile_root/credentials.txt"
-      chmod 600 "$profile_root/credentials.txt"
-      log_manifest "OK owner-exported credentials $export_path"
+      if cp "$imported_path" "$profile_root/credentials.txt"; then
+        chmod 600 "$profile_root/credentials.txt"
+        log_manifest "OK owner-exported credentials $export_path"
+      else
+        log_manifest "FAILED credential copy $export_path"
+      fi
     else log_manifest "FAILED credential export $export_path"; fi
   elif [ -n "$export_path" ]; then log_manifest "MISSING credential export $export_path"; fi
-  require_tool gpg || { log_manifest "FAILED recovery profile encryption: gpg unavailable"; return 0; }
-  passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
-  confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || return 0
-  if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 0; fi
-  if tar -C "$BACKUP_ROOT" -cf - recovery_profile | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg"; else log_manifest "FAILED recovery profile encryption"; fi
+  passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption"; return 1; }
+  confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption confirmation"; return 1; }
+  if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
+  if tar -C "$BACKUP_ROOT" -cf - recovery_profile | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
   unset passphrase confirmation
   if [ -f "$profile_root/credentials.txt" ]; then
     if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
@@ -309,8 +317,9 @@ for choice in $CHOICES; do
   esac
 done
 
-if [ "$RECOVERY_PROFILE" -eq 1 ]; then
-  collect_recovery_profile
+if [ "$RECOVERY_PROFILE" -eq 1 ] && ! collect_recovery_profile; then
+  print_error "Recovery profile was not completed. Review backup_manifest.txt before wiping the phone."
+  exit 1
 fi
 
 cat >>"$MANIFEST" <<EOF
