@@ -41,6 +41,12 @@ fi
 
 ensure_git() {
   command -v git >/dev/null 2>&1 && return 0
+  as_root() {
+    if [ "$(id -u)" -eq 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    else printf 'Administrator permission is required to install git.\n' >&2; return 1
+    fi
+  }
   case "$(uname -s)" in
     Darwin)
       printf 'Installing Apple command-line tools. Run this installer again when it finishes.\n' >&2
@@ -48,12 +54,12 @@ ensure_git() {
       exit 1
       ;;
     Linux)
-      if command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git
-      elif command -v dnf >/dev/null 2>&1; then sudo dnf install -y git
-      elif command -v yum >/dev/null 2>&1; then sudo yum install -y git
-      elif command -v pacman >/dev/null 2>&1; then sudo pacman -Sy --noconfirm git
-      elif command -v zypper >/dev/null 2>&1; then sudo zypper --non-interactive install git
-      elif command -v apk >/dev/null 2>&1; then sudo apk add git
+      if command -v apt-get >/dev/null 2>&1; then as_root apt-get update && as_root apt-get install -y git
+      elif command -v dnf >/dev/null 2>&1; then as_root dnf install -y git
+      elif command -v yum >/dev/null 2>&1; then as_root yum install -y git
+      elif command -v pacman >/dev/null 2>&1; then as_root pacman -Sy --noconfirm git
+      elif command -v zypper >/dev/null 2>&1; then as_root zypper --non-interactive install git
+      elif command -v apk >/dev/null 2>&1; then as_root apk add git
       else printf 'No supported package manager found. Install git, then run this installer again.\n' >&2; exit 1
       fi
       ;;
