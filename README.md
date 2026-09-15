@@ -6,6 +6,10 @@ The repository is designed so public commits contain only tooling and documentat
 
 Current version: `0.2.0`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
+## Documentation Site
+
+The GitHub Pages site provides a visual quick start, command reference, and recovery-profile safety guidance. It is published from `docs/` after changes reach `main`.
+
 ## What It Collects
 
 The collection script uses `adb` to gather:
