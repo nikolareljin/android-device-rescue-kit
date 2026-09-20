@@ -1,6 +1,73 @@
 # Changelog
 
-## 0.3.2
+Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
+notes from it and matches nothing else.
+
+## 2026-09-20 — v0.4.0
+
+### Photos are now found, not guessed at
+
+- `./dump photos` finds and copies **every** photo and video on the device, and
+  proves it. Discovery no longer means three fixed paths -- `DCIM`, `Pictures`,
+  `Movies` -- which missed the removable card, vendor gallery folders, received
+  app media and any folder the owner made themselves. Android's MediaStore and
+  a filesystem sweep are both enumerated and merged: MediaStore knows about
+  files a sweep cannot reach, and the sweep catches files copied in over USB
+  that MediaStore has never indexed. Either source alone loses photos.
+- Every copy is re-measured against its size on the phone. Failures are retried,
+  and anything still missing is written to `missing_photos.txt` with a reason
+  while the command exits non-zero. A photo backup that reports success without
+  having copied everything is the one outcome this must never produce.
+- An interrupted run resumes. A file already present at the right size is
+  skipped; one left truncated by a dropped cable is copied again.
+- The device's directory structure is preserved rather than flattened, so
+  ~10,000 files cannot collide on their filenames.
+- `photos_index.txt`, `photos_report.txt`, `missing_photos.txt` and `photos/`
+  are gitignored. They carry the full device path of every photo -- filenames,
+  folder names, app names, dates -- which is personal data under the same rule
+  as the captures themselves.
+- Thumbnails, caches and trashed files are excluded. The extension and
+  exclusion lists are `config/photo_extensions.txt` and
+  `config/photo_exclude_patterns.txt`, read at run time.
+
+### Credential exports
+
+- **Fixed: the "Open Recovery Apps" step never opened anything.** A third
+  CRLF-sensitive package match was missed when the other two were fixed in
+  0.3.2, so every password manager on the phone went undetected and the step
+  silently did nothing.
+- Several credential exports can now be imported instead of one. A phone
+  routinely holds more than one -- the browser's passwords, a manager's vault,
+  an authenticator's seeds -- and the previous single prompt could not express
+  that. Names that collide no longer overwrite each other.
+- Imports are verified: an export that copies as 0 bytes, or at a different
+  size from the phone's, is discarded and reported rather than kept. The old
+  path could record OK for an empty file and then offer to delete the phone's
+  copy.
+- The plaintext secret is no longer stored twice. `credentials.txt` was a copy
+  of the import; the file under `imports/` is now the only readable copy, and
+  the retention prompt governs it.
+- Formats other than CSV are accepted. Managers export `json`, `1pux` and
+  `kdbx`, and requiring a CSV rejected valid vaults.
+
+### Releases
+
+- `CHANGELOG.md` headers are now `## YYYY-MM-DD — vX.Y.Z`, which is the only
+  shape `ci-helpers` extracts release notes from. Every previous release is
+  reformatted with its real merge date, so notes can be published for them.
+- A merged release branch now tags **and** publishes its GitHub Release, chained
+  off the tag job rather than dispatched, so it needs no `actions: write`.
+- `.github/workflows/create-github-release.yml` publishes notes for a tag that
+  already exists, for the releases made before this automation.
+
+### Tests
+
+- Added `tests/`, run by CI. The photo index has unit tests; the backup flow has
+  end-to-end tests against a **mock `adb`** backed by a fake device tree, so
+  discovery, resume and the failure path are provable without hardware. 54
+  assertions.
+
+## 2026-09-20 — v0.3.2
 
 - Added automatic release tagging. Merging a `release/X.Y.Z` pull request to `main` now creates the `X.Y.Z` tag; previously nothing in the repository ever created one, so 0.1.0 through 0.3.1 were released untagged.
 - Updated the `ci-helpers` reference from a pinned commit to the floating `production` release ref, in the PR gate, the secret scan, and the local bootstrap script.
@@ -25,29 +92,29 @@
 - Fixed the backup reporting success when it had written nothing. An unmounted or read-only destination let every capture fail in turn while the run still ended in "Backup Complete". The destination is now checked up front, failed captures are counted, and a partial backup exits non-zero.
 - Fixed a permission window on the recovery profile. Its files were created world-readable and only restricted after being moved, so Wi-Fi records and device identifiers were briefly exposed.
 
-## 0.3.1
+## 2026-09-15 — v0.3.1
 
 - Added a reusable SVG logo and README hero image for the Android rescue workflow.
 
-## 0.3.0
+## 2026-09-15 — v0.3.0
 
 - Added one-line installers for Linux, macOS, and Windows through WSL 2.
 - Added stable `android-rescue-dump`, `android-rescue-prompt`, and `android-rescue-update` launchers for direct Unix installs.
 - Documented platform setup, Windows path handling, and installer update behavior.
 
-## 0.2.0
+## 2026-09-15 — v0.2.0
 
 - Added the opt-in `./dump data --recovery-profile` workflow for local Android recovery settings, network details, owner-exported password-manager CSV files, and installed-app recovery guidance.
 - Added passphrase-encrypted recovery-profile archives and an explicit plaintext-credential retention prompt.
 - Added limited, consented root-only collection of known readable Android Wi-Fi system records; private app databases remain out of scope.
 
-## 0.1.1
+## 2026-09-14 — v0.1.1
 
 - Improved WhatsApp backup coverage for consumer and business shared-storage media, legacy folders, local backup folders, and exported chat folders.
 - Improved Snapchat backup coverage for app media, exported media, legacy folders, and common export directories.
 - Added per-app backup notes explaining what ADB can preserve and which official in-app restore steps are still required.
 
-## 0.1.0
+## 2026-05-25 — v0.1.0
 
 - Initial public toolkit for Android diagnostic dumps, data preservation, restore support, and analysis prompt generation.
 - Added simple top-level commands: `./dump log`, `./dump data`, and `./prompt`.

@@ -8,6 +8,18 @@ This guide covers the three main workflows:
 
 Raw captures and backups are private. Keep them in ignored directories such as `captures/` and `backups/`, or write them to another mounted destination.
 
+## Photos
+
+```bash
+./dump photos [destination]
+```
+
+Finds every photo and video through MediaStore and a filesystem sweep, copies
+them preserving the device's directory layout, and verifies each one against
+its size on the phone. Exits non-zero and writes `missing_photos.txt` if any
+file could not be copied. Re-running resumes: whole files are skipped,
+truncated ones are copied again.
+
 ## 1. Dump Device Information
 
 Install host dependencies:

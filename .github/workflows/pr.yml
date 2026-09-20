@@ -16,6 +16,6 @@ jobs:
       # gate independent of what the runner image happens to ship. scripts/lint.sh
       # fails rather than skips when it is absent, so the check cannot go quiet.
       lint_command: "sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck && ./scripts/lint.sh"
-      test_command: "./prompt --help && ./dump --help"
+      test_command: "./prompt --help && ./dump --help && bash tests/run_all.sh"
       check_release_tag: true
       release_branch: ${{ github.head_ref }}

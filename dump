@@ -8,11 +8,15 @@ usage() {
 Usage:
   ./dump log [destination]
   ./dump data [destination] [--recovery-profile]
+  ./dump photos [destination]
 
 Commands:
-  log   Collect Android diagnostic logs and build a triage report.
-  data  Preserve personal/shared data using the interactive backup flow.
-        Add --recovery-profile for settings, networks, and owner-exported credentials.
+  log     Collect Android diagnostic logs and build a triage report.
+  data    Preserve personal/shared data using the interactive backup flow.
+          Add --recovery-profile for settings, networks, and owner-exported credentials.
+  photos  Find and copy EVERY photo and video on the device, then verify each
+          one against its size on the phone. Exits non-zero and names what is
+          missing if even one file could not be copied.
 
 Examples:
   ./dump log
@@ -20,6 +24,8 @@ Examples:
   ./dump data
   ./dump data /mnt/android-backups/s22-before-reset
   ./dump data /mnt/android-backups/s22-before-reset --recovery-profile
+  ./dump photos
+  ./dump photos /mnt/android-backups/s22-photos
 EOF
 }
 
@@ -35,6 +41,11 @@ case "$mode" in
     "$ROOT/tools/analyze_android_capture.sh" "$destination"
     printf 'Diagnostic capture: %s\n' "$destination"
     printf 'Triage report: %s/analysis_report.txt\n' "$destination"
+    ;;
+  photos)
+    destination="${1:-backups/$(date +%Y%m%d-%H%M%S)}"
+    mkdir -p "$destination"
+    "$ROOT/tools/android_photo_backup.sh" "$destination"
     ;;
   data)
     # ${1+"$@"} rather than "$@": on bash 3.2, which is what macOS ships,

@@ -1,0 +1,23 @@
+# Glob patterns for paths to skip, one per line.
+#
+# These remove machine-generated artefacts only. Nothing here may exclude user
+# content: a photo that exists solely inside an app folder is still the user's
+# photo, and hidden folders may hold deliberately hidden pictures.
+
+# Thumbnail caches regenerated from the originals.
+*/.thumbnails/*
+*/.thumbs/*
+
+# App and system caches. Matched on a whole path component so a user folder
+# named "Cached Memories" is not swept in.
+*/cache/*
+*/.cache/*
+*/Cache/*
+*/code_cache/*
+
+# Files Android has already moved to the trash.
+*/.trashed-*
+
+# Glide, Picasso and friends: decoded copies of images held elsewhere.
+*/image_manager_disk_cache/*
+*/picasso-cache/*

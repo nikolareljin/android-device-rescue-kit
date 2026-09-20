@@ -30,6 +30,14 @@ getprop.txt
 dumpsys_*.txt
 batterystats*.txt
 *.stderr
+
+# Photo discovery output. These hold the full device path of every photo and
+# video on the phone -- filenames, folder names, app names and dates -- which is
+# personal data under the same rule as the captures themselves.
+photos_index.txt
+photos_report.txt
+missing_photos.txt
+photos/
 last_kmsg*
 last_kernel*
 last_all_history*

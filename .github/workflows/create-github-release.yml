@@ -1,0 +1,33 @@
+name: Create GitHub Release
+
+# Publishes a GitHub Release for a tag that already exists.
+#
+# The normal path is automatic: auto-tag.yml tags a merged release/X.Y.Z pull
+# request and chains straight into the same reusable workflow this file calls.
+# This exists for the cases that path cannot serve -- publishing notes for a tag
+# created before the automation existed (0.3.1, 0.3.2), or re-running a release
+# whose notes were wrong.
+#
+# Release notes come from the matching CHANGELOG.md section. ci-helpers matches
+# `## YYYY-MM-DD — vX.Y.Z` and nothing else; a heading in any other shape falls
+# back to auto-generated notes silently, which is why the format is stated at
+# the top of CHANGELOG.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing version tag to publish, e.g. 0.3.2 (no v prefix)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: nikolareljin/ci-helpers/.github/workflows/create-github-release.yml@production
+    with:
+      release_tag: ${{ inputs.release_tag }}

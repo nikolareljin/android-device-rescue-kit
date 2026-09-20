@@ -240,22 +240,78 @@ collect_recovery_profile() {
   fi
   dialog --defaultno --title "Open Recovery Apps" --yesno "Open detected recovery apps for owner-approved export or transfer? The tool will never enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
     for app in com.android.chrome com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-      if grep -Fx "package:$app" "$profile_root/apps.txt" >/dev/null 2>&1; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
+      if has_package "$app"; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
     done
   }
-  export_path=$(dialog --stdout --title "Credential Export" --inputbox "Enter the exact phone path of an owner-exported password CSV, or leave empty to skip. Example: /sdcard/Download/passwords.csv" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "/sdcard/Download/passwords.csv") || export_path=""
-  if [ -n "$export_path" ] && adb_shell_exists "$export_path"; then
-    imported_path="$profile_root/imports/$(basename "$export_path")"
-    if adb pull -a "$export_path" "$imported_path"; then
-      chmod 600 "$imported_path"
-      if cp "$imported_path" "$profile_root/credentials.txt"; then
-        chmod 600 "$profile_root/credentials.txt"
-        log_manifest "OK owner-exported credentials $export_path"
-      else
-        log_manifest "FAILED credential copy $export_path"
-      fi
-    else log_manifest "FAILED credential export $export_path"; fi
-  elif [ -n "$export_path" ]; then log_manifest "MISSING credential export $export_path"; fi
+  # Several exports, not one.
+  #
+  # A phone routinely has more than one: the browser's passwords, a password
+  # manager's vault, an authenticator's seeds. The previous single prompt kept
+  # whichever was typed and there was no way to add a second. It also copied the
+  # file to credentials.txt, leaving the same secret in plaintext twice; the
+  # import under imports/ is now the only readable copy.
+  #
+  # Format is deliberately not checked. Managers export csv, json, 1pux and
+  # kdbx, so requiring a CSV would reject valid vaults. What is checked is that
+  # the file arrived whole.
+  mkdir -p "$profile_root/imports"
+  credential_count=0
+  # Prefill the example path on the first prompt only; an already-imported path
+  # offered again just invites a duplicate.
+  credential_prefill="/sdcard/Download/passwords.csv"
+  while :; do
+    export_path=$(dialog --stdout --title "Credential Export ($credential_count imported)" --inputbox "Exact phone path of an owner-exported password file (csv, json, 1pux, kdbx).\n\nLeave empty and press OK when there are no more." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "$credential_prefill") || export_path=""
+    credential_prefill=""
+    [ -n "$export_path" ] || break
+
+    if ! adb_shell_exists "$export_path"; then
+      log_manifest "MISSING credential export $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      dialog --title "Not Found" --msgbox "No file at:\n$export_path\n\nCheck the path on the phone and try again." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+      continue
+    fi
+
+    import_name="$(basename "$export_path")"
+    # Two managers both exporting "passwords.csv" must not overwrite each other.
+    if [ -e "$profile_root/imports/$import_name" ]; then
+      import_name="$(date +%s)-$import_name"
+    fi
+    imported_path="$profile_root/imports/$import_name"
+
+    if ! adb pull -a "$export_path" "$imported_path" >/dev/null 2>&1; then
+      log_manifest "FAILED credential export $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      continue
+    fi
+    chmod 600 "$imported_path"
+
+    # An empty or short file here is the dangerous case: it looks imported, and
+    # the user is later invited to delete the phone's copy.
+    local_size=$(wc -c <"$imported_path" 2>/dev/null | tr -d ' ')
+    device_size=$(adb shell "stat -c %s '$export_path' 2>/dev/null || wc -c <'$export_path'" 2>/dev/null | tr -dc '0-9')
+    if [ -z "$local_size" ] || [ "$local_size" -eq 0 ]; then
+      log_manifest "FAILED credential export empty after copy $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      rm -f "$imported_path"
+      dialog --title "Empty File" --msgbox "$export_path copied as 0 bytes and was discarded.\n\nRe-export it on the phone, then add it again." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+      continue
+    fi
+    if [ -n "$device_size" ] && [ "$device_size" -ne "$local_size" ]; then
+      log_manifest "FAILED credential export size mismatch $export_path (device=$device_size local=$local_size)"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      rm -f "$imported_path"
+      dialog --title "Incomplete Copy" --msgbox "$export_path copied incompletely and was discarded.\n\nReconnect the phone and add it again." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+      continue
+    fi
+
+    credential_count=$((credential_count + 1))
+    log_manifest "OK owner-exported credentials $export_path -> imports/$import_name ($local_size bytes)"
+    printf '%s\t%s\t%s bytes\n' "$import_name" "$export_path" "$local_size" >>"$profile_root/credential_exports.txt"
+  done
+  if [ "$credential_count" -gt 0 ]; then
+    chmod 600 "$profile_root/credential_exports.txt"
+  fi
+  log_manifest "Credential exports imported: $credential_count"
   passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption"; return 1; }
   confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption confirmation"; return 1; }
   if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
@@ -280,12 +336,14 @@ collect_recovery_profile() {
   fi
   if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
   unset passphrase confirmation
-  if [ -f "$profile_root/credentials.txt" ]; then
-    if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
-      log_manifest "RETAINED plaintext credentials by owner confirmation"
+  if [ "$credential_count" -gt 0 ]; then
+    if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive? Choose No to keep them only inside the archive, which has already been verified to extract." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
+      log_manifest "RETAINED $credential_count plaintext credential export(s) by owner confirmation"
     else
-      rm -f "$profile_root/credentials.txt" "$profile_root"/imports/*
-      log_manifest "REMOVED plaintext credential files after encryption"
+      # Only reached when the archive verified, so this cannot be the last copy.
+      rm -f "$profile_root"/imports/* "$profile_root/credential_exports.txt"
+      rmdir "$profile_root/imports" 2>/dev/null || true
+      log_manifest "REMOVED $credential_count plaintext credential export(s) after verified encryption"
     fi
   fi
 }
@@ -305,7 +363,7 @@ CHOICES=$(dialog --stdout --separate-output \
   --title "Android Backup" \
   --checklist "Select data to preserve. Private app databases usually require the app's official transfer feature." \
   "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" \
-  photos "Camera photos and videos: DCIM, Pictures, Movies" on \
+  photos "Every photo and video on the device, found and verified" on \
   downloads "Downloads and documents from shared storage" on \
   whatsapp "WhatsApp visible media and local shared backup folders" on \
   snapchat "Snapchat exported/shared media folders" on \
@@ -329,9 +387,16 @@ RECOVERY_PROFILE=0
 for choice in $CHOICES; do
   case "$choice" in
     photos)
-      pull_path /sdcard/DCIM DCIM
-      pull_path /sdcard/Pictures Pictures
-      pull_path /sdcard/Movies Movies
+      # Discovery, not a path list. DCIM/Pictures/Movies misses the removable
+      # card, vendor gallery folders, received app media and any folder the
+      # owner made themselves. android_photo_backup.sh enumerates through
+      # MediaStore and a filesystem sweep, then verifies every file it claims.
+      if "$SCRIPT_DIR/android_photo_backup.sh" "$BACKUP_ROOT"; then
+        log_manifest "OK photos verified (see photos_report.txt)"
+      else
+        log_manifest "FAILED photos incomplete (see missing_photos.txt)"
+        BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      fi
       ;;
     downloads)
       pull_path /sdcard/Download Download

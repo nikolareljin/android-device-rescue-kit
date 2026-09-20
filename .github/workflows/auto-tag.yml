@@ -35,3 +35,22 @@ jobs:
     uses: nikolareljin/ci-helpers/.github/workflows/auto-tag.yml@production
     with:
       update_production_tag: false
+
+  # Publishing is chained off the tag job rather than dispatched from it.
+  #
+  # A tag pushed with GITHUB_TOKEN does not fire another workflow's
+  # `on: push: tags:` trigger, so the release cannot simply listen for the tag.
+  # The alternative -- auto-tag-release.yml with `release_workflow:` -- would
+  # dispatch a local workflow and force `actions: write` on every run. Calling
+  # the release workflow directly keeps it to one run and one extra scope.
+  #
+  # `version` is empty when the push was not a release/* merge, which is how an
+  # ordinary commit to main skips this.
+  release:
+    needs: tag
+    if: ${{ needs.tag.outputs.version != '' }}
+    permissions:
+      contents: write
+    uses: nikolareljin/ci-helpers/.github/workflows/create-github-release.yml@production
+    with:
+      release_tag: ${{ needs.tag.outputs.version }}

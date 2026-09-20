@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# SCRIPT: test_photo_backup.sh
+# DESCRIPTION: End-to-end tests for android_photo_backup.sh against a mock adb.
+# USAGE: bash tests/test_photo_backup.sh
+# EXAMPLE: bash tests/test_photo_backup.sh
+#
+# A fake device is built as a directory tree, and a mock `adb` on PATH answers
+# `content query`, `find`, `stat` and `pull` from it. That makes the contract
+# testable without hardware: discovery unions two sources, resume skips only
+# what is already whole, and a file that cannot be copied makes the run fail
+# and get named rather than pass quietly.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TESTS=0
+FAILURES=0
+
+check() {
+  TESTS=$((TESTS + 1))
+  if [ "$2" != "$3" ]; then
+    FAILURES=$((FAILURES + 1))
+    printf 'FAIL: %s\n  expected: %s\n  actual:   %s\n' "$1" "$2" "$3" >&2
+  fi
+}
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+DEVICE="$WORK/device"
+BIN="$WORK/bin"
+mkdir -p "$BIN"
+
+# --- the fake device -------------------------------------------------------
+
+build_device() {
+  rm -rf "$DEVICE"
+  mkdir -p "$DEVICE/storage/emulated/0/DCIM/Camera" \
+           "$DEVICE/storage/emulated/0/DCIM/.thumbnails" \
+           "$DEVICE/storage/emulated/0/Pictures/Screenshots" \
+           "$DEVICE/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/Images" \
+           "$DEVICE/storage/1A2B-3C4D/DCIM"
+  printf 'camera-one'    >"$DEVICE/storage/emulated/0/DCIM/Camera/IMG_001.jpg"
+  printf 'camera-two'    >"$DEVICE/storage/emulated/0/DCIM/Camera/IMG_002.heic"
+  printf 'a-screenshot'  >"$DEVICE/storage/emulated/0/Pictures/Screenshots/shot.png"
+  printf 'received-pic'  >"$DEVICE/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/Images/w.jpg"
+  printf 'sdcard-photo'  >"$DEVICE/storage/1A2B-3C4D/DCIM/card.jpg"
+  printf 'a-movie-file'  >"$DEVICE/storage/emulated/0/DCIM/Camera/VID_001.mp4"
+  # Must be excluded:
+  printf 'thumb'         >"$DEVICE/storage/emulated/0/DCIM/.thumbnails/t.jpg"
+  # Must be ignored as non-media:
+  printf 'notes'         >"$DEVICE/storage/emulated/0/DCIM/notes.pdf"
+}
+
+# MEDIASTORE_ONLY lists paths the sweep will not return, to prove the union
+# matters. UNPULLABLE lists paths the mock refuses to copy.
+: >"$WORK/mediastore_only"
+: >"$WORK/sweep_only"
+: >"$WORK/unpullable"
+
+cat >"$BIN/adb" <<'MOCK'
+#!/usr/bin/env bash
+# Mock adb backed by a directory tree. Understands only what the script uses.
+set -uo pipefail
+DEVICE="${MOCK_DEVICE:?}"
+WORK="${MOCK_WORK:?}"
+
+dev_to_local() { printf '%s%s\n' "$DEVICE" "$1"; }
+
+case "${1:-}" in
+  shell)
+    shift
+    case "${1:-}" in
+      content)
+        # content query --uri <uri> --projection _data
+        uri=""
+        while [ "$#" -gt 0 ]; do
+          [ "$1" = "--uri" ] && uri="$2"
+          shift
+        done
+        case "$uri" in
+          *images*) pattern='\.(jpg|jpeg|png|heic|webp|gif)$' ;;
+          *video*)  pattern='\.(mp4|3gp|mkv|mov|webm)$' ;;
+          *) exit 0 ;;
+        esac
+        i=0
+        # MediaStore reports CRLF, as a real device over a PTY does.
+        find "$DEVICE" -type f 2>/dev/null | sed "s|^$DEVICE||" | grep -Ei "$pattern" | sort | while IFS= read -r p; do
+          case "$p" in */.thumbnails/*) continue ;; esac
+          # Files MediaStore has not indexed, e.g. copied in over USB.
+          grep -Fxq "$p" "$WORK/sweep_only" 2>/dev/null && continue
+          printf 'Row: %s _data=%s\r\n' "$i" "$p"
+          i=$((i + 1))
+        done
+        ;;
+      stat)
+        shift
+        fmt=""
+        [ "${1:-}" = "-c" ] && { fmt="$2"; shift 2; }
+        for p in "$@"; do
+          l="$(dev_to_local "$p")"
+          [ -f "$l" ] || continue
+          printf '%s|%s\n' "$(wc -c <"$l" | tr -d ' ')" "$p"
+        done
+        ;;
+      *)
+        # A single shell command string, which is how the sweep is issued.
+        cmd="$*"
+        case "$cmd" in
+          find*)
+            find "$DEVICE" -type f 2>/dev/null | sed "s|^$DEVICE||" | sort | while IFS= read -r p; do
+              # Files listed as MediaStore-only are invisible to the sweep.
+              grep -Fxq "$p" "$WORK/mediastore_only" 2>/dev/null && continue
+              case "$p" in
+                *.jpg|*.jpeg|*.png|*.heic|*.webp|*.gif|*.mp4|*.3gp|*.mkv|*.mov|*.webm) printf '%s\n' "$p" ;;
+              esac
+            done
+            ;;
+        esac
+        ;;
+    esac
+    ;;
+  pull)
+    shift
+    [ "${1:-}" = "-a" ] && shift
+    src="$1"; dst="$2"
+    grep -Fxq "$src" "$WORK/unpullable" 2>/dev/null && exit 1
+    l="$(dev_to_local "$src")"
+    [ -f "$l" ] || exit 1
+    cp "$l" "$dst" || exit 1
+    ;;
+  start-server|wait-for-device) : ;;
+esac
+exit 0
+MOCK
+chmod +x "$BIN/adb"
+
+export MOCK_DEVICE="$DEVICE" MOCK_WORK="$WORK"
+export PATH="$BIN:$PATH"
+export PHOTO_ROOTS="/storage"
+
+run_backup() {
+  local root="$1"
+  ( cd "$ROOT" && bash tools/android_photo_backup.sh "$root" >"$WORK/out.txt" 2>&1 )
+  printf '%s' "$?"
+}
+
+index_count() { wc -l <"$1/photos_index.txt" | tr -d ' '; }
+copied_count() { find "$1/photos" -type f 2>/dev/null | wc -l | tr -d ' '; }
+
+# --- 1. a clean run copies everything and verifies -------------------------
+
+build_device
+BK="$WORK/bk1"; mkdir -p "$BK"
+rc=$(run_backup "$BK")
+check "clean run exits 0" "0" "$rc"
+check "index holds the 6 real media files" "6" "$(index_count "$BK")"
+check "all 6 copied" "6" "$(copied_count "$BK")"
+check "no missing_photos.txt on success" "absent" "$([ -f "$BK/missing_photos.txt" ] && echo present || echo absent)"
+check "thumbnail excluded" "absent" \
+  "$([ -f "$BK/photos/storage/emulated/0/DCIM/.thumbnails/t.jpg" ] && echo present || echo absent)"
+check "pdf not treated as media" "absent" \
+  "$([ -f "$BK/photos/storage/emulated/0/DCIM/notes.pdf" ] && echo present || echo absent)"
+check "removable card kept on its own path" "present" \
+  "$([ -f "$BK/photos/storage/1A2B-3C4D/DCIM/card.jpg" ] && echo present || echo absent)"
+check "device tree mirrored" "camera-one" \
+  "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg" 2>/dev/null)"
+
+# --- 2. the union matters: a MediaStore-only file is still captured --------
+
+build_device
+printf '/storage/emulated/0/Pictures/Screenshots/shot.png\n' >"$WORK/mediastore_only"
+BK="$WORK/bk2"; mkdir -p "$BK"
+rc=$(run_backup "$BK")
+check "union run exits 0" "0" "$rc"
+check "file invisible to the sweep is still copied" "present" \
+  "$([ -f "$BK/photos/storage/emulated/0/Pictures/Screenshots/shot.png" ] && echo present || echo absent)"
+: >"$WORK/mediastore_only"
+
+# --- 2b. the union matters the other way: a file MediaStore has not indexed
+#         must still be swept up. This is the USB-copy case, and without the
+#         sweep it is lost silently -- nothing else would notice.
+
+build_device
+printf 'unindexed-photo' >"$DEVICE/storage/emulated/0/DCIM/Camera/IMG_003.jpg"
+printf '/storage/emulated/0/DCIM/Camera/IMG_003.jpg\n' >"$WORK/sweep_only"
+BK="$WORK/bk2b"; mkdir -p "$BK"
+rc=$(run_backup "$BK")
+check "sweep-only run exits 0" "0" "$rc"
+check "file MediaStore never indexed is still copied" "unindexed-photo" \
+  "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_003.jpg" 2>/dev/null)"
+check "index counts it" "7" "$(index_count "$BK")"
+: >"$WORK/sweep_only"
+
+# --- 3. an uncopyable file fails the run and is named ----------------------
+
+build_device
+printf '/storage/emulated/0/DCIM/Camera/IMG_002.heic\n' >"$WORK/unpullable"
+BK="$WORK/bk3"; mkdir -p "$BK"
+rc=$(PHOTO_PULL_RETRIES=2 run_backup "$BK")
+check "a file that cannot be copied FAILS the run" "1" "$rc"
+check "missing_photos.txt exists" "present" \
+  "$([ -f "$BK/missing_photos.txt" ] && echo present || echo absent)"
+check "the missing file is named" "1" \
+  "$(grep -c 'IMG_002.heic' "$BK/missing_photos.txt" 2>/dev/null | tr -d ' ')"
+check "report records the shortfall" "1" \
+  "$(grep -c '^MISSING  *: 1$' "$BK/photos_report.txt" 2>/dev/null | tr -d ' ')"
+check "the other photos still copied" "present" \
+  "$([ -f "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg" ] && echo present || echo absent)"
+: >"$WORK/unpullable"
+
+# --- 4. resume: a whole file is not re-copied, a short one is -------------
+
+build_device
+BK="$WORK/bk4"; mkdir -p "$BK"
+run_backup "$BK" >/dev/null
+# Truncate one copy to simulate an interrupted pull, and leave another intact.
+printf 'x' >"$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg"
+rc=$(run_backup "$BK")
+check "second run exits 0" "0" "$rc"
+check "the truncated file was re-copied whole" "camera-one" \
+  "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg" 2>/dev/null)"
+check "resume reported for the untouched files" "1" \
+  "$(grep -cE '^Already present \(resumed\) : [1-9]' "$BK/photos_report.txt" | tr -d ' ')"
+
+# --- 5. a device with no photos is not an error ---------------------------
+
+rm -rf "$DEVICE"; mkdir -p "$DEVICE/storage/emulated/0/DCIM"
+BK="$WORK/bk5"; mkdir -p "$BK"
+rc=$(run_backup "$BK")
+check "empty device exits 0" "0" "$rc"
+check "empty device says so" "1" \
+  "$(grep -c 'No photos or videos found' "$BK/photos_report.txt" | tr -d ' ')"
+
+# ---------------------------------------------------------------------------
+
+if [ "$FAILURES" -eq 0 ]; then
+  printf 'photo_backup: %d checks passed\n' "$TESTS"
+else
+  printf 'photo_backup: %d of %d checks FAILED\n' "$FAILURES" "$TESTS" >&2
+  exit 1
+fi

@@ -1,0 +1,38 @@
+# File extensions treated as photos or videos, one per line, lowercase.
+# Matched case-insensitively against the final extension only.
+# Edit freely: this file is read at run time, not compiled in.
+
+# Still images
+jpg
+jpeg
+png
+heic
+heif
+webp
+gif
+bmp
+tif
+tiff
+avif
+
+# Camera raw
+dng
+raw
+cr2
+cr3
+nef
+arw
+orf
+rw2
+srw
+
+# Video, kept with photos because a camera roll mixes them and a user asked to
+# preserve "photos" does not mean "leave the videos on the phone".
+mp4
+3gp
+mkv
+mov
+avi
+webm
+m4v
+mts
