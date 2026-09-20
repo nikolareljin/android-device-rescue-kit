@@ -20,7 +20,7 @@ mkdir -p "$WORK_DIR"
 {
   printf '# Android Capture Analysis\n\n'
   printf 'Capture: %s\n' "$CAPTURE_DIR"
-  printf 'Generated: %s\n\n' "$(date -Iseconds)"
+  printf 'Generated: %s\n\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
 } >"$REPORT"
 
 extract_bugreport_artifacts() {
@@ -53,7 +53,9 @@ extract_bugreport_artifacts() {
   done
 }
 
-for bugreport in "$CAPTURE_DIR"/bugreport*.zip "$CAPTURE_DIR"/*bugreport*.zip; do
+# One glob: "bugreport.zip" (the name collect_android_dumps.sh always writes)
+# matched both of the previous two, emitting the section twice.
+for bugreport in "$CAPTURE_DIR"/*bugreport*.zip; do
   [ -f "$bugreport" ] || continue
   {
     printf '## Bugreport\n\n'
@@ -68,7 +70,14 @@ search_section() {
 
   {
     printf '## %s\n\n' "$title"
-    rg -n -i --no-heading "$pattern" "$CAPTURE_DIR" "$WORK_DIR" 2>/dev/null | head -n 120 || true
+    # --no-ignore is required: the default capture directory is captures/<ts>
+    # inside this repo, and .gitignore deliberately ignores logcat_*.txt,
+    # dumpsys_*.txt and the bugreport. ripgrep applies ignore rules to a
+    # directory it is given explicitly, so without this the kernel panic in
+    # logcat is silently absent from the report.
+    # $WORK_DIR lives inside $CAPTURE_DIR, so passing both searched and
+    # printed every extracted artifact twice.
+    rg -n -i --no-heading --no-ignore --hidden "$pattern" "$CAPTURE_DIR" 2>/dev/null | head -n 120 || true
     printf '\n'
   } >>"$REPORT"
 }

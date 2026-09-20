@@ -2,13 +2,15 @@
 
 ANDROID_RESCUE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_HELPERS_DIR="${SCRIPT_HELPERS_DIR:-$ANDROID_RESCUE_ROOT/scripts/script-helpers}"
-ANDROID_RESCUE_HAS_HELPERS=0
+# Exported so a script that sources this file can tell whether the real helper
+# library loaded or the fallback definitions below are in use.
+export ANDROID_RESCUE_HAS_HELPERS=0
 
 if [ -f "$SCRIPT_HELPERS_DIR/helpers.sh" ]; then
   # shellcheck source=/dev/null
   source "$SCRIPT_HELPERS_DIR/helpers.sh"
   shlib_import logging dialog os
-  ANDROID_RESCUE_HAS_HELPERS=1
+  export ANDROID_RESCUE_HAS_HELPERS=1
 else
   print_info() { printf '[Info]: %s\n' "$*"; }
   print_warning() { printf '[Warning]: %s\n' "$*" >&2; }

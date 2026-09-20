@@ -14,7 +14,10 @@ if ($distributions.Count -eq 0) {
 }
 
 Write-Host 'Installing Android Device Rescue Kit inside WSL...'
-& wsl.exe -- bash -lc "curl -fsSL '$InstallerUrl' | bash"
+# set -o pipefail: without it the pipeline reports bash's status, not curl's,
+# so a 404 or blocked proxy fed an empty script to bash, which exited 0 and
+# the installer announced success.
+& wsl.exe -- bash -lc "set -o pipefail; curl -fsSL '$InstallerUrl' | bash"
 if ($LASTEXITCODE -ne 0) {
     throw "The WSL installer failed with exit code $LASTEXITCODE."
 }

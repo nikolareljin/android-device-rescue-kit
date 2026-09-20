@@ -20,16 +20,16 @@ dumpstate*.log
 *.html
 
 # Common adb/logcat/dumpsys outputs.
+#
+# collect_android_dumps.sh writes dumpsys output as `dumpsys_<service>.txt`, so
+# bare names like `wifi.txt` never matched anything. Every capture also gets a
+# sibling `<name>.stderr`.
 logcat*.txt
 dropbox_*.txt
 getprop.txt
-battery.txt
+dumpsys_*.txt
 batterystats*.txt
-thermalservice.txt
-telephony*.txt
-telecom.txt
-connectivity.txt
-wifi.txt
+*.stderr
 last_kmsg*
 last_kernel*
 last_all_history*
@@ -59,10 +59,16 @@ scripts/ci-helpers/
 Thumbs.db
 
 # Public capture configuration.
+#
+# `!config/` alone does not rescue a file whose name matches a broad rule above
+# (*.lst, *.p). `!config/**` does, and config/ is documented as user-editable.
 !config/
-!config/*.txt
+!config/**
 
 # GitHub Pages source assets. Keep raw captured HTML ignored.
-!docs/index.html
+#
+# `*.html` above is meant for captured bugreport HTML, but it also swallowed any
+# new page under docs/. Rescue the whole docs tree rather than one file at a time.
+!docs/**/*.html
 !docs/assets/
 !docs/assets/site.css
