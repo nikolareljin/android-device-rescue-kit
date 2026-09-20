@@ -1,0 +1,37 @@
+name: Auto Tag
+
+# Creates the version tag when a release/X.Y.Z pull request merges to main.
+#
+# This repository shipped 0.1.0 through 0.3.1 without a single tag. It had the
+# checking half of the release flow — release-tag-check.yml asserts VERSION
+# matches the branch and that the tag is still free — and never the acting half.
+# "Tag 0.3.1 is available" was the gate confirming nothing had tagged, and it
+# passed green on every release because nothing downstream consumed it.
+#
+# auto-tag.yml, not auto-tag-release.yml: the latter declares actions: write for
+# its dispatch job, and GitHub validates a reusable workflow's declared
+# permissions at startup regardless of job-level if: gates, so calling it
+# without that permission fails the whole run with startup_failure. The dispatch
+# only exists to trigger a local release workflow, which this repository does
+# not have.
+#
+# update_production_tag stays false: this is an end-user toolkit, not a shared
+# library that other repositories pin at @production, and the workflow hard-fails
+# if you opt in without shipping scripts/create_production.sh.
+#
+# The tag is unprefixed (0.3.2, not v0.3.2), matching what check_release_tag.sh
+# guards against.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  tag:
+    uses: nikolareljin/ci-helpers/.github/workflows/auto-tag.yml@production
+    with:
+      update_production_tag: false

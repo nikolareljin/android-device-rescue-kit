@@ -76,7 +76,9 @@ Backup destinations can be any writable directory visible to the computer runnin
 
 This repository expects `script-helpers` at `scripts/script-helpers`. Run `scripts/bootstrap_script_helpers.sh` to clone it. The helper repo provides dependency installation, terminal dialog sizing, OS detection, and common logging functions used by the interactive backup and restore scripts.
 
-This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./update` to install both helper repositories, host dependencies, and local git hooks. CI workflows use `ci-helpers` for PR checks, release branch version checks, release tag checks, and secret scanning.
+This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./update` to install both helper repositories, host dependencies, and local git hooks. CI workflows use `ci-helpers` for PR checks, release branch version checks, release tag checks, automatic release tagging, and secret scanning.
+
+Both helper repositories track their `production` release ref rather than a pinned commit, so a fresh clone picks up the current release of each.
 
 ## Privacy Rule
 

@@ -5,7 +5,7 @@ on:
 
 jobs:
   gate:
-    uses: nikolareljin/ci-helpers/.github/workflows/pr-gate.yml@99ff8e3313bd53aede98d8e81fd7afaca4eb9b8b
+    uses: nikolareljin/ci-helpers/.github/workflows/pr-gate.yml@production
     with:
       lint_command: "find . -path ./.git -prune -o -path ./scripts/script-helpers -prune -o -path ./scripts/ci-helpers -prune -o -type f -name '*.sh' -print0 | xargs -0 -r bash -n && bash -n dump prompt update install.sh"
       test_command: "./prompt --help && ./dump --help"

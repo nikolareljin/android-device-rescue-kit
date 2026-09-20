@@ -16,8 +16,13 @@ if [ -d "$HELPERS_DIR" ] && [ "$(find "$HELPERS_DIR" -mindepth 1 -maxdepth 1 2>/
   exit 1
 fi
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git submodule update --init --recursive scripts/script-helpers || {
+# Only attempt a submodule update when one is actually declared. This repo
+# tracks script-helpers by cloning its `production` branch rather than pinning a
+# submodule, so the unconditional attempt always failed and printed an error on
+# a run that then succeeded.
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+  git -C "$REPO_ROOT" config -f .gitmodules --get "submodule.scripts/script-helpers.url" >/dev/null 2>&1; then
+  git -C "$REPO_ROOT" submodule update --init --recursive scripts/script-helpers || {
     printf 'Submodule update failed; trying direct clone.\n' >&2
     rm -rf "$HELPERS_DIR"
     git clone --branch "$HELPERS_BRANCH" "$HELPERS_URL" "$HELPERS_DIR"

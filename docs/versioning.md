@@ -19,6 +19,16 @@ Update both:
 
 Release branches must be named `release/X.Y.Z`, matching the value in [VERSION](../VERSION). The local wrapper scripts under `scripts/` delegate release checks and version bumps to `ci-helpers`.
 
+## Tagging
+
+Tagging is automatic. Merging a `release/X.Y.Z` pull request into `main` runs the `Auto Tag` workflow, which creates the tag `X.Y.Z` on the merge commit.
+
+Tags are unprefixed: `0.3.2`, not `v0.3.2`.
+
+Nothing needs to be tagged by hand, and a release branch whose tag already exists is rejected before merge — `check_release_tag.sh` runs on every push to a `release/*` branch and on every pull request, and fails if the tag is taken. A green "tag is available" line in that check means the tag does not exist *yet*; the `Auto Tag` workflow is what creates it on merge.
+
+Versions 0.1.0 through 0.3.1 predate this workflow and were released untagged, except for 0.3.1, which was tagged retroactively.
+
 Useful commands:
 
 ```bash
@@ -29,4 +39,4 @@ Useful commands:
 
 ## Current Version
 
-`0.3.1` adds visual assets; `0.3.0` adds cross-platform installers; `0.2.0` adds the opt-in recovery profile workflow; `0.1.0` was the first public version of the current codebase.
+`0.3.2` adds automatic release tagging; `0.3.1` adds visual assets; `0.3.0` adds cross-platform installers; `0.2.0` adds the opt-in recovery profile workflow; `0.1.0` was the first public version of the current codebase.

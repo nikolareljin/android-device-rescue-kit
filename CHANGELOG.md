@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Added automatic release tagging. Merging a `release/X.Y.Z` pull request to `main` now creates the `X.Y.Z` tag; previously nothing in the repository ever created one, so 0.1.0 through 0.3.1 were released untagged.
+- Updated the `ci-helpers` reference from a pinned commit to the floating `production` release ref, in the PR gate, the secret scan, and the local bootstrap script.
+- Fixed `scripts/bootstrap_script_helpers.sh` printing a submodule failure on every run. It now attempts a submodule update only when one is declared, and otherwise clones the `production` branch directly.
+
 ## 0.3.1
 
 - Added a reusable SVG logo and README hero image for the Android rescue workflow.
