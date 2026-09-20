@@ -13,11 +13,21 @@ LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RECOVERY_PROFILE=0
+# Keep the readable profile alongside the encrypted archive.
+#
+# Default is 1: the plaintext profile is kept unless the owner says otherwise.
+# --keep-plaintext removes the question entirely, which is what makes a test run
+# deterministic -- both artifacts are guaranteed to exist without depending on
+# how a dialog was answered.
+KEEP_PLAINTEXT=1
+NO_PROMPT_PLAINTEXT=0
 BACKUP_DESTINATION=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --recovery-profile) RECOVERY_PROFILE=1 ;;
-    -h|--help) printf "Usage: %s [destination] [--recovery-profile]\n" "$0"; exit 0 ;;
+    --keep-plaintext) KEEP_PLAINTEXT=1; NO_PROMPT_PLAINTEXT=1 ;;
+    --discard-plaintext) KEEP_PLAINTEXT=0; NO_PROMPT_PLAINTEXT=1 ;;
+    -h|--help) printf "Usage: %s [destination] [--recovery-profile] [--keep-plaintext|--discard-plaintext]\n" "$0"; exit 0 ;;
     --*) print_error "Unknown option: $1"; exit 1 ;;
     *) [ -z "$BACKUP_DESTINATION" ] || { print_error "Only one backup destination may be supplied."; exit 1; }; BACKUP_DESTINATION="$1" ;;
   esac
@@ -334,11 +344,18 @@ collect_recovery_profile() {
   else
     log_manifest "FAILED recovery profile encryption (tar=${pipe_status[0]} gpg=${pipe_status[1]})"
   fi
-  if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
+  if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; log_manifest "PLAINTEXT profile retained at $profile_root"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
   unset passphrase confirmation
   if [ "$credential_count" -gt 0 ]; then
-    if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive? Choose No to keep them only inside the archive, which has already been verified to extract." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
-      log_manifest "RETAINED $credential_count plaintext credential export(s) by owner confirmation"
+    keep_them=0
+    if [ "$NO_PROMPT_PLAINTEXT" -eq 1 ]; then
+      # Decided on the command line; asking again would only invite a mistake.
+      [ "$KEEP_PLAINTEXT" -eq 1 ] && keep_them=1
+    elif dialog --title "Retain Plaintext Credentials?" --yesno "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive?\n\nYes keeps both copies. No keeps them only inside the archive, which has already been verified to extract." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
+      keep_them=1
+    fi
+    if [ "$keep_them" -eq 1 ]; then
+      log_manifest "RETAINED $credential_count plaintext credential export(s)"
     else
       # Only reached when the archive verified, so this cannot be the last copy.
       rm -f "$profile_root"/imports/* "$profile_root/credential_exports.txt"
@@ -461,5 +478,16 @@ if [ "$BACKUP_FAILURES" -gt 0 ]; then
   exit 1
 fi
 
-dialog --title "Backup Complete" --msgbox "Backup written to:\n$BACKUP_ROOT\n\nReview backup_manifest.txt before wiping or restoring the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+# Name both recovery-profile artifacts explicitly. During testing the point is
+# to confirm the readable tree and the encrypted archive are BOTH present and
+# agree; leaving that to be inferred from the manifest is how it goes unchecked.
+completion_detail=""
+if [ "$RECOVERY_PROFILE" -eq 1 ] && [ -f "$BACKUP_ROOT/recovery-profile.tar.gpg" ]; then
+  completion_detail="\n\nRecovery profile, both copies:\n  readable:  $BACKUP_ROOT/recovery_profile/\n  encrypted: $BACKUP_ROOT/recovery-profile.tar.gpg\n\nConfirm they agree:\n  tools/verify_recovery_archive.sh $BACKUP_ROOT"
+  print_info "Readable profile:  $BACKUP_ROOT/recovery_profile/"
+  print_info "Encrypted archive: $BACKUP_ROOT/recovery-profile.tar.gpg"
+  print_info "Verify they agree: tools/verify_recovery_archive.sh $BACKUP_ROOT"
+fi
+
+dialog --title "Backup Complete" --msgbox "Backup written to:\n$BACKUP_ROOT\n\nReview backup_manifest.txt before wiping or restoring the phone.$completion_detail" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
 print_success "Backup complete: $BACKUP_ROOT"

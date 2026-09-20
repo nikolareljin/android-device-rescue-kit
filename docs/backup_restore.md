@@ -80,10 +80,25 @@ its size against the phone. An empty or truncated copy is discarded and
 reported rather than kept.
 
 Each import is stored once, readable, under `recovery_profile/imports/`. There
-is no second plaintext copy. After the archive has been created *and proven to
-extract*, the tool asks whether to keep those readable imports; choose No unless
-an offline plaintext copy is explicitly needed. The question is only reached
-when the archive verified, so answering No cannot leave you with nothing.
+is no second plaintext copy.
+
+**Both copies are kept by default.** After the archive has been created *and
+proven to extract*, the tool asks whether to keep the readable imports too, and
+the default answer is yes. Pass `--discard-plaintext` to keep credentials only
+inside the archive, or `--keep-plaintext` to keep both without being asked --
+which is what makes a test run deterministic, since nothing then depends on how
+a dialog was answered.
+
+Having both is only useful if you can confirm they say the same thing:
+
+```bash
+tools/verify_recovery_archive.sh <backup-root>
+```
+
+That decrypts the archive and compares its file list and per-file sizes against
+the readable tree. It exits non-zero and names the difference if a file is
+missing from either side or has changed size — so a stale or truncated archive
+is caught rather than assumed good.
 
 Keep the archive passphrase separate from the backup. Authenticator seeds,
 passkeys, banking credentials, and provider-controlled recovery data still

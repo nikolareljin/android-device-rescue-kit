@@ -7,13 +7,16 @@ usage() {
   cat <<EOF
 Usage:
   ./dump log [destination]
-  ./dump data [destination] [--recovery-profile]
+  ./dump data [destination] [--recovery-profile] [--keep-plaintext|--discard-plaintext]
   ./dump photos [destination]
 
 Commands:
   log     Collect Android diagnostic logs and build a triage report.
   data    Preserve personal/shared data using the interactive backup flow.
           Add --recovery-profile for settings, networks, and owner-exported credentials.
+          The readable profile is kept alongside the encrypted archive by default.
+          --keep-plaintext    keep both copies without asking (use when testing)
+          --discard-plaintext keep credentials only inside the verified archive
   photos  Find and copy EVERY photo and video on the device, then verify each
           one against its size on the phone. Exits non-zero and names what is
           missing if even one file could not be copied.

@@ -50,6 +50,23 @@ notes from it and matches nothing else.
 - Formats other than CSV are accepted. Managers export `json`, `1pux` and
   `kdbx`, and requiring a CSV rejected valid vaults.
 
+### Keeping both copies of the recovery profile
+
+- The readable recovery profile is **kept by default** alongside the encrypted
+  archive. The retention prompt previously defaulted to discarding the
+  credential imports; it now defaults to keeping them.
+- `--keep-plaintext` and `--discard-plaintext` decide it on the command line
+  without a prompt. `--keep-plaintext` is what makes a test run deterministic:
+  both artifacts are guaranteed to exist regardless of how a dialog was
+  answered.
+- Added `tools/verify_recovery_archive.sh`, which decrypts the archive and
+  compares its file list and per-file sizes against the readable tree. Keeping
+  both copies is only worth anything if they can be proven to agree; a stale or
+  truncated archive is now caught rather than assumed good. It exits non-zero
+  and names what differs.
+- A completed run now names both paths on screen and in the manifest, instead
+  of leaving their existence to be inferred.
+
 ### Releases
 
 - `CHANGELOG.md` headers are now `## YYYY-MM-DD — vX.Y.Z`, which is the only
