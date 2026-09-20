@@ -94,19 +94,37 @@ fi
 
 # One stat call per file would be ~10,000 round trips. Batching keeps it to a
 # few dozen while staying well inside the shell's argument limit.
+# `adb shell` does not pass argv through: it joins its arguments into one string
+# and hands that to a shell on the device. So `adb shell stat -c "%s|%n" "$p"`
+# fails twice -- the device shell reads the `|` as a pipe, and a path containing
+# a space (every "WhatsApp Images/..." file) is word-split. The symptom is
+# silent: no size is recorded, and verification then degrades to "the file is
+# non-zero", which a truncated photo passes.
+#
+# The command is therefore built as one properly quoted string.
+run_batch_stat() {
+  local -n _b="$1"
+  [ "${#_b[@]}" -gt 0 ] || return 0
+  local cmd="stat -c '%s|%n'" p
+  for p in "${_b[@]}"; do
+    cmd="$cmd $(photo_shell_quote "$p")"
+  done
+  adb shell "$cmd" 2>/dev/null | tr -d '\r' >>"$WORK_DIR/sizes.txt"
+}
+
 collect_device_sizes() {
   local batch=() path
   : >"$WORK_DIR/sizes.txt"
   while IFS= read -r path; do
     batch+=("$path")
+    # 200 paths of ~100 characters is ~20 KB of command line, well inside the
+    # device shell's limit.
     if [ "${#batch[@]}" -ge 200 ]; then
-      printf '%s\0' "${batch[@]}" | xargs -0 -r sh -c 'adb shell stat -c "%s|%n" "$@" 2>/dev/null' _ >>"$WORK_DIR/sizes.txt" 2>/dev/null
+      run_batch_stat batch
       batch=()
     fi
   done <"$INDEX_FILE"
-  if [ "${#batch[@]}" -gt 0 ]; then
-    printf '%s\0' "${batch[@]}" | xargs -0 -r sh -c 'adb shell stat -c "%s|%n" "$@" 2>/dev/null' _ >>"$WORK_DIR/sizes.txt" 2>/dev/null
-  fi
+  run_batch_stat batch
 }
 
 print_info 'Reading sizes from the device...'

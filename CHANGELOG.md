@@ -67,6 +67,20 @@ notes from it and matches nothing else.
 - A completed run now names both paths on screen and in the manifest, instead
   of leaving their existence to be inferred.
 
+### Running unattended, and without encryption
+
+- `--no-encrypt` writes the recovery profile readable and builds no archive, for
+  a destination that is already trusted storage and an owner who needs to read
+  the files directly. The manifest and the closing summary both say plainly that
+  the profile is unencrypted and where it is.
+- `--non-interactive`, with `--select` and repeatable `--credential-export`,
+  runs the whole backup without prompting. Every prompt now goes through a small
+  `ui_yesno`/`ui_msg` layer that returns the default when unattended, so both
+  modes execute the same surrounding code rather than two paths that drift.
+- Unattended defaults are the cautious ones: collecting root-only Wi-Fi records
+  and driving the phone's UI to open a password manager both default to *no*,
+  because both assume somebody is standing at the handset.
+
 ### Releases
 
 - `CHANGELOG.md` headers are now `## YYYY-MM-DD — vX.Y.Z`, which is the only
@@ -81,7 +95,9 @@ notes from it and matches nothing else.
 
 - Added `tests/`, run by CI. The photo index has unit tests; the backup flow has
   end-to-end tests against a **mock `adb`** backed by a fake device tree, so
-  discovery, resume and the failure path are provable without hardware. 54
+  discovery, resume and the failure path are provable without hardware. An
+  unattended backup runs with `dialog` replaced by a stub that fails if it is
+  called at all, which is what proves `--non-interactive` reaches no prompt. 88
   assertions.
 
 ## 2026-09-20 — v0.3.2

@@ -45,6 +45,12 @@ build_device() {
   printf 'received-pic'  >"$DEVICE/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/Images/w.jpg"
   printf 'sdcard-photo'  >"$DEVICE/storage/1A2B-3C4D/DCIM/card.jpg"
   printf 'a-movie-file'  >"$DEVICE/storage/emulated/0/DCIM/Camera/VID_001.mp4"
+  # Spaces in both the directory and the filename. This is the real shape of
+  # /Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/..., and it is
+  # what broke on a device: adb shell joins argv into one string, so an
+  # unquoted path became two arguments and no size was ever recorded.
+  mkdir -p "$DEVICE/storage/emulated/0/Pictures/My Holiday Photos"
+  printf 'spaced-photo' >"$DEVICE/storage/emulated/0/Pictures/My Holiday Photos/beach day.jpg"
   # Must be excluded:
   printf 'thumb'         >"$DEVICE/storage/emulated/0/DCIM/.thumbnails/t.jpg"
   # Must be ignored as non-media:
@@ -69,6 +75,12 @@ dev_to_local() { printf '%s%s\n' "$DEVICE" "$1"; }
 case "${1:-}" in
   shell)
     shift
+    # Real adb does NOT pass argv through: it joins its arguments with spaces
+    # and hands one string to a shell on the device. The mock does the same, so
+    # a caller that forgets to quote a path containing a space fails here the
+    # way it fails on a phone.
+    cmd="$*"
+    set -- $cmd
     case "${1:-}" in
       content)
         # content query --uri <uri> --projection _data
@@ -93,9 +105,14 @@ case "${1:-}" in
         done
         ;;
       stat)
-        shift
-        fmt=""
-        [ "${1:-}" = "-c" ] && { fmt="$2"; shift 2; }
+        # The device shell re-splits the joined string, honouring quotes. eval
+        # is what reproduces that faithfully; the paths come from this file's
+        # own fixture tree.
+        rest="${cmd#stat }"
+        case "$rest" in
+          -c\ *) rest="${rest#-c }"; rest="${rest#* }" ;;
+        esac
+        eval "set -- $rest"
         for p in "$@"; do
           l="$(dev_to_local "$p")"
           [ -f "$l" ] || continue
@@ -153,8 +170,8 @@ build_device
 BK="$WORK/bk1"; mkdir -p "$BK"
 rc=$(run_backup "$BK")
 check "clean run exits 0" "0" "$rc"
-check "index holds the 6 real media files" "6" "$(index_count "$BK")"
-check "all 6 copied" "6" "$(copied_count "$BK")"
+check "index holds the 7 real media files" "7" "$(index_count "$BK")"
+check "all 7 copied" "7" "$(copied_count "$BK")"
 check "no missing_photos.txt on success" "absent" "$([ -f "$BK/missing_photos.txt" ] && echo present || echo absent)"
 check "thumbnail excluded" "absent" \
   "$([ -f "$BK/photos/storage/emulated/0/DCIM/.thumbnails/t.jpg" ] && echo present || echo absent)"
@@ -164,6 +181,11 @@ check "removable card kept on its own path" "present" \
   "$([ -f "$BK/photos/storage/1A2B-3C4D/DCIM/card.jpg" ] && echo present || echo absent)"
 check "device tree mirrored" "camera-one" \
   "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg" 2>/dev/null)"
+# The spaced path must survive discovery, the size lookup and the copy. If the
+# size lookup silently failed, verification would fall back to "non-zero" and a
+# truncated file would pass -- so this also guards that degradation.
+check "a path with spaces is copied" "spaced-photo" \
+  "$(cat "$BK/photos/storage/emulated/0/Pictures/My Holiday Photos/beach day.jpg" 2>/dev/null)"
 
 # --- 2. the union matters: a MediaStore-only file is still captured --------
 
@@ -188,7 +210,7 @@ rc=$(run_backup "$BK")
 check "sweep-only run exits 0" "0" "$rc"
 check "file MediaStore never indexed is still copied" "unindexed-photo" \
   "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_003.jpg" 2>/dev/null)"
-check "index counts it" "7" "$(index_count "$BK")"
+check "index counts it" "8" "$(index_count "$BK")"
 : >"$WORK/sweep_only"
 
 # --- 3. an uncopyable file fails the run and is named ----------------------

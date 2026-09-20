@@ -123,6 +123,23 @@ assert_eq "merge: drops non-media extensions" "/storage/emulated/0/DCIM/a.jpg" "
 out=$(photo_merge_index <(printf '') <(printf ''))
 assert_eq "merge: two empty sources yield nothing" "" "$out"
 
+# --- photo_shell_quote -----------------------------------------------------
+
+# adb shell joins argv into one string for a shell on the device, so a path has
+# to arrive already quoted. Verified by round-tripping through a real shell.
+assert_eq "quote: plain path" "'/a/b.jpg'" "$(photo_shell_quote /a/b.jpg)"
+assert_eq "quote: path with a space" "'/a/My Photos/b.jpg'" "$(photo_shell_quote "/a/My Photos/b.jpg")"
+assert_eq "quote: round-trips through a shell" "/a/My Photos/b.jpg" \
+  "$(eval "printf '%s' $(photo_shell_quote "/a/My Photos/b.jpg")")"
+assert_eq "quote: survives a single quote in the name" "/a/Bob's day.jpg" \
+  "$(eval "printf '%s' $(photo_shell_quote "/a/Bob's day.jpg")")"
+assert_eq "quote: a pipe stays literal, not a pipeline" '/a/b|c.jpg' \
+  "$(eval "printf '%s' $(photo_shell_quote '/a/b|c.jpg')")"
+# The single quotes are the assertion: $HOME must NOT expand.
+# shellcheck disable=SC2016
+assert_eq "quote: dollar stays literal" '/a/$HOME.jpg' \
+  "$(eval "printf '%s' $(photo_shell_quote '/a/$HOME.jpg')")"
+
 # --- photo_local_target ----------------------------------------------------
 
 assert_eq "target: mirrors the device tree under the root" \

@@ -54,7 +54,7 @@ case "$mode" in
     # ${1+"$@"} rather than "$@": on bash 3.2, which is what macOS ships,
     # "$@" with no positional parameters is an unbound-variable error under
     # `set -u`, so the documented bare `./dump data` died before starting.
-    "$ROOT/tools/android_backup_dialog.sh" ${1+"$@"}
+    ANDROID_RESCUE_CMD="./dump data" "$ROOT/tools/android_backup_dialog.sh" ${1+"$@"}
     ;;
   -h|--help|help|'')
     usage
