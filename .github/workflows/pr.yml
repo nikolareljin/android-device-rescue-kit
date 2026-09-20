@@ -7,7 +7,10 @@ jobs:
   gate:
     uses: nikolareljin/ci-helpers/.github/workflows/pr-gate.yml@production
     with:
-      lint_command: "find . -path ./.git -prune -o -path ./scripts/script-helpers -prune -o -path ./scripts/ci-helpers -prune -o -type f -name '*.sh' -print0 | xargs -0 -r bash -n && bash -n dump prompt update install.sh"
+      # shellcheck is preinstalled on ubuntu-latest, but installing it makes the
+      # gate independent of what the runner image happens to ship. scripts/lint.sh
+      # fails rather than skips when it is absent, so the check cannot go quiet.
+      lint_command: "sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck && ./scripts/lint.sh"
       test_command: "./prompt --help && ./dump --help"
       check_release_tag: true
       release_branch: ${{ github.head_ref }}

@@ -244,7 +244,7 @@ print_info "Writing backup to $BACKUP_ROOT"
 
 cat >"$MANIFEST" <<EOF
 Android backup manifest
-Started: $(date -Iseconds)
+Started: $(date +%Y-%m-%dT%H:%M:%S%z)
 Destination: $BACKUP_ROOT
 
 EOF
@@ -324,7 +324,7 @@ fi
 
 cat >>"$MANIFEST" <<EOF
 
-Finished: $(date -Iseconds)
+Finished: $(date +%Y-%m-%dT%H:%M:%S%z)
 
 Manual app actions still recommended:
 - WhatsApp: verify built-in chat transfer or Google Drive encrypted backup.

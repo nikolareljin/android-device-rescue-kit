@@ -47,8 +47,12 @@ append_section() {
   printf '4. Immediate data-preservation steps.\n'
   printf '5. Repair or restore options, ordered from least destructive to most destructive.\n'
   printf '6. Extra dumps or commands needed if evidence is insufficient.\n\n'
+  # The backticks here are Markdown, not command substitution, so the format
+  # string is single-quoted on purpose and the value is passed as an argument.
+  # shellcheck disable=SC2016
   printf 'Capture directory: `%s`\n\n' "$CAPTURE_DIR"
-  printf 'Generated: `%s`\n\n' "$(date -Iseconds)"
+  # shellcheck disable=SC2016
+  printf 'Generated: `%s`\n\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
   printf '## Available Files\n\n'
   find "$CAPTURE_DIR" -maxdepth 3 -type f -print 2>/dev/null
 } >"$OUTPUT_FILE"

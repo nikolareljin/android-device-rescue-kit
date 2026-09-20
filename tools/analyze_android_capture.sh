@@ -20,7 +20,7 @@ mkdir -p "$WORK_DIR"
 {
   printf '# Android Capture Analysis\n\n'
   printf 'Capture: %s\n' "$CAPTURE_DIR"
-  printf 'Generated: %s\n\n' "$(date -Iseconds)"
+  printf 'Generated: %s\n\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
 } >"$REPORT"
 
 extract_bugreport_artifacts() {

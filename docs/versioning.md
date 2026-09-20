@@ -27,7 +27,7 @@ Tags are unprefixed: `0.3.2`, not `v0.3.2`.
 
 Nothing needs to be tagged by hand, and a release branch whose tag already exists is rejected before merge — `check_release_tag.sh` runs on every push to a `release/*` branch and on every pull request, and fails if the tag is taken. A green "tag is available" line in that check means the tag does not exist *yet*; the `Auto Tag` workflow is what creates it on merge.
 
-Versions 0.1.0 through 0.3.1 predate this workflow and were released untagged, except for 0.3.1, which was tagged retroactively.
+Versions 0.1.0 through 0.3.1 predate this workflow and were released untagged. `0.3.2` is the first version tagged by it.
 
 Useful commands:
 
@@ -35,6 +35,7 @@ Useful commands:
 ./scripts/check_release_version.sh --branch release/0.1.0 --repo .
 ./scripts/check_release_tag.sh --branch release/0.1.0 --repo . --fetch-tags
 ./scripts/version_bump.sh patch
+./scripts/lint.sh
 ```
 
 ## Current Version

@@ -16,12 +16,21 @@ if [ -d "$HELPERS_DIR" ] && [ "$(find "$HELPERS_DIR" -mindepth 1 -maxdepth 1 2>/
   exit 1
 fi
 
-# Only attempt a submodule update when one is actually declared. This repo
-# tracks script-helpers by cloning its `production` branch rather than pinning a
-# submodule, so the unconditional attempt always failed and printed an error on
-# a run that then succeeded.
-if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
-  git -C "$REPO_ROOT" config -f .gitmodules --get "submodule.scripts/script-helpers.url" >/dev/null 2>&1; then
+# Only attempt a submodule update when one is actually declared for this path.
+# This repo tracks script-helpers by cloning its `production` branch rather than
+# pinning a submodule, so the unconditional attempt always failed and printed an
+# error on a run that then succeeded.
+#
+# Matched on the declared `path`, not on the submodule's name: the two are equal
+# by convention but not by rule, and `[submodule "script-helpers"]` with
+# `path = scripts/script-helpers` is valid.
+declares_submodule() {
+  [ -f "$REPO_ROOT/.gitmodules" ] || return 1
+  git -C "$REPO_ROOT" config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null |
+    awk '{ print $2 }' | grep -Fxq 'scripts/script-helpers'
+}
+
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 && declares_submodule; then
   git -C "$REPO_ROOT" submodule update --init --recursive scripts/script-helpers || {
     printf 'Submodule update failed; trying direct clone.\n' >&2
     rm -rf "$HELPERS_DIR"
