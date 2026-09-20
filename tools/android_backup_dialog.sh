@@ -72,7 +72,23 @@ BACKUP_ROOT="$(select_backup_root "$BACKUP_DESTINATION")" || {
 }
 MANIFEST="$BACKUP_ROOT/backup_manifest.txt"
 
-mkdir -p "$BACKUP_ROOT/shared" "$BACKUP_ROOT/device"
+# A backup that cannot be written must stop here, loudly. Without this check an
+# unmounted /mnt/nas, a read-only card or a typo'd destination let every mkdir,
+# every adb pull and every manifest append fail in turn while the run still
+# finished with "Backup Complete" -- and the phone then got wiped.
+if ! mkdir -p "$BACKUP_ROOT/shared" "$BACKUP_ROOT/device" 2>/dev/null; then
+  print_error "Cannot create backup directories under: $BACKUP_ROOT"
+  dialog --title "Backup Destination Unusable" --msgbox "Cannot write to:\n$BACKUP_ROOT\n\nCheck the path is mounted and writable, then run the backup again. Nothing has been backed up." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  exit 1
+fi
+if ! : >>"$MANIFEST" 2>/dev/null; then
+  print_error "Cannot write the manifest: $MANIFEST"
+  exit 1
+fi
+
+# Number of captures that failed. The final success message is conditional on
+# this being zero, so a partial backup can never present itself as a complete one.
+BACKUP_FAILURES=0
 
 log_manifest() {
   printf '%s\n' "$*" >>"$MANIFEST"
@@ -94,6 +110,7 @@ pull_path() {
       log_manifest "OK $source_path -> shared/$target_name"
     else
       log_manifest "FAILED $source_path -> shared/$target_name"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
     fi
   else
     print_warning "Skipping missing path: $source_path"
@@ -109,6 +126,7 @@ capture_text() {
     log_manifest "OK device/$name"
   else
     log_manifest "FAILED device/$name"
+    BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
   fi
 }
 
@@ -175,6 +193,18 @@ collect_recovery_profile() {
     log_manifest "SKIPPED recovery profile: gpg unavailable"
     return 1
   fi
+  # Create the profile files private from the start. They were written at the
+  # default 0644 and only chmod'ed 600 after the later `mv`, leaving a window in
+  # which Wi-Fi records and device identifiers were world-readable.
+  #
+  # umask is process-wide, so the previous value is captured and restored on
+  # every return path below rather than leaking into the rest of the backup.
+  local prior_umask
+  prior_umask="$(umask)"
+  # RETURN trap rather than a restore at each exit: this function has five
+  # return paths below and a missed one would leak 077 into the rest of the run.
+  trap 'umask "$prior_umask"' RETURN
+  umask 077
   capture_text recovery_profile/settings_system.txt adb shell settings list system
   capture_text recovery_profile/settings_secure.txt adb shell settings list secure
   capture_text recovery_profile/settings_global.txt adb shell settings list global
@@ -229,7 +259,26 @@ collect_recovery_profile() {
   passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption"; return 1; }
   confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption confirmation"; return 1; }
   if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
-  if tar -C "$BACKUP_ROOT" -cf - recovery_profile | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
+  # This script runs without pipefail, so `tar | gpg` reported only gpg's status.
+  # If tar died part-way -- destination full, an unreadable file, a partial adb
+  # pull, a NAS hiccup -- gpg happily encrypted the truncated stream and exited
+  # 0. The archive was logged OK and the user was then invited to delete the
+  # only readable copy of their exported passwords. So: check both halves via
+  # PIPESTATUS, then prove the archive actually extracts before trusting it.
+  archive_ok=0
+  tar -C "$BACKUP_ROOT" -cf - recovery_profile |
+    gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase"
+  pipe_status=("${PIPESTATUS[@]}")
+  if [ "${pipe_status[0]}" -eq 0 ] && [ "${pipe_status[1]}" -eq 0 ]; then
+    if gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 --decrypt "$BACKUP_ROOT/recovery-profile.tar.gpg" 3<<<"$passphrase" 2>/dev/null | tar -tf - >/dev/null 2>&1; then
+      archive_ok=1
+    else
+      log_manifest "FAILED recovery profile archive did not verify"
+    fi
+  else
+    log_manifest "FAILED recovery profile encryption (tar=${pipe_status[0]} gpg=${pipe_status[1]})"
+  fi
+  if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
   unset passphrase confirmation
   if [ -f "$profile_root/credentials.txt" ]; then
     if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
@@ -340,6 +389,12 @@ Manual app actions still recommended:
 - Snapchat: verify Memories sync/export inside Snapchat.
 - Signal/authenticators/banking apps: use each app's official transfer/export.
 EOF
+
+if [ "$BACKUP_FAILURES" -gt 0 ]; then
+  dialog --title "Backup Incomplete" --msgbox "$BACKUP_FAILURES item(s) FAILED.\n\nBackup root:\n$BACKUP_ROOT\n\nOpen backup_manifest.txt and search for FAILED before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  print_error "Backup incomplete: $BACKUP_FAILURES item(s) failed. See $MANIFEST"
+  exit 1
+fi
 
 dialog --title "Backup Complete" --msgbox "Backup written to:\n$BACKUP_ROOT\n\nReview backup_manifest.txt before wiping or restoring the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
 print_success "Backup complete: $BACKUP_ROOT"

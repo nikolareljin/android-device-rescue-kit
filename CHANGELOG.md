@@ -21,6 +21,9 @@
 - Added a vulnerability reporting channel to `SECURITY.md`, which previously gave a reporter nowhere to go.
 - `scripts/lint.sh` now checks one file per `bash -n` invocation. `bash -n a b c` parses only `a`; the rest become positional arguments. The previous inline CI command therefore left `prompt`, `update` and every `tools/` script unchecked while appearing to cover them. The hook scripts are now linted too.
 - Corrected the version in `README.md` and its privacy-check command, which referenced directories absent from a fresh clone.
+- Fixed the encrypted recovery archive being trusted without being checked. The script runs without `pipefail`, so `tar | gpg` reported only gpg's status: when `tar` died part-way the truncated stream was encrypted, `gpg` exited 0, the archive was recorded as OK, and the user was then offered the deletion of the only readable copy of their exported passwords. Both exit statuses are now checked, and the archive must decrypt and list before it is accepted.
+- Fixed the backup reporting success when it had written nothing. An unmounted or read-only destination let every capture fail in turn while the run still ended in "Backup Complete". The destination is now checked up front, failed captures are counted, and a partial backup exits non-zero.
+- Fixed a permission window on the recovery profile. Its files were created world-readable and only restricted after being moved, so Wi-Fi records and device identifiers were briefly exposed.
 
 ## 0.3.1
 
