@@ -18,10 +18,15 @@ run_git_submodule_update
 
 "$ROOT/scripts/bootstrap_script_helpers.sh"
 "$ROOT/scripts/bootstrap_ci_helpers.sh"
-"$ROOT/scripts/install_deps.sh"
 
+# Hooks before dependencies, deliberately. install_deps.sh exits non-zero on
+# an unsupported OS or a failed package install, and under `set -e` that used
+# to abort ./update before the hooks were ever wired -- silently leaving the
+# gitleaks pre-commit guard off on exactly the first run a contributor makes.
 if [ -f "$ROOT/scripts/script-helpers/scripts/setup-hooks.sh" ]; then
   bash "$ROOT/scripts/script-helpers/scripts/setup-hooks.sh"
 fi
+
+"$ROOT/scripts/install_deps.sh"
 
 printf 'Update complete.\n'

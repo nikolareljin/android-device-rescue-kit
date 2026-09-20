@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
 if [[ -f scripts/script-helpers/scripts/git-hooks/pre-push ]]; then
   bash scripts/script-helpers/scripts/git-hooks/pre-push "$@"
 fi

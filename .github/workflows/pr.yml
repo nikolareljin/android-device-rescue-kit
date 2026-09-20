@@ -3,6 +3,11 @@ name: PR
 on:
   pull_request:
 
+# Explicit and read-only, so this does not silently gain a write token if the
+# repository or organisation default is ever changed to read-write.
+permissions:
+  contents: read
+
 jobs:
   gate:
     uses: nikolareljin/ci-helpers/.github/workflows/pr-gate.yml@production

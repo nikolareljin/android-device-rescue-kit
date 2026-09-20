@@ -12,7 +12,7 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.3.1`. Versioning rules are documented in [Versioning](docs/versioning.md).
+Current version: `0.3.2`. Versioning rules are documented in [Versioning](docs/versioning.md).
 
 ## Documentation Site
 
@@ -24,7 +24,7 @@ The collection script uses `adb` to gather:
 
 - Full Android bugreport
 - `getprop`
-- `logcat` from all, radio, crash, events, kernel, and main buffers where available
+- `logcat` from all, radio, crash, events, kernel, main, and system buffers where available
 - Dropbox reset/crash entries such as `SYSTEM_LAST_KMSG`, tombstones, watchdogs, and boot records
 - Battery, thermal, telephony, telecom, connectivity, Wi-Fi, activity, package, and disk stats
 
@@ -88,7 +88,7 @@ Before publishing:
 
 ```bash
 git status --short
-git check-ignore -v captures/* s22_dumps/* analysis_kernel_logs/*
+git status --ignored --short
 ```
 
 ## Typical Root-Cause Clues

@@ -32,7 +32,9 @@ append_section() {
 
   {
     printf '\n## %s\n\n' "$title"
-    rg -n -i --no-heading "$pattern" "$CAPTURE_DIR" 2>/dev/null | head -n "$limit" || true
+    # See analyze_android_capture.sh: without --no-ignore the capture files
+    # are skipped for the default in-repo capture path.
+    rg -n -i --no-heading --no-ignore --hidden "$pattern" "$CAPTURE_DIR" 2>/dev/null | head -n "$limit" || true
   } >>"$OUTPUT_FILE"
 }
 

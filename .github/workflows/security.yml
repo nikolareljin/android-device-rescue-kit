@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: "0 5 * * 6"
 
+# Explicit and read-only, so this does not silently gain a write token if the
+# repository or organisation default is ever changed to read-write.
+permissions:
+  contents: read
+
 jobs:
   gitleaks:
     uses: nikolareljin/ci-helpers/.github/workflows/gitleaks-scan.yml@production

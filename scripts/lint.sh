@@ -13,17 +13,22 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # The entrypoints carry no .sh extension, so they have to be named.
-EXTENSIONLESS=(dump prompt update)
+EXTENSIONLESS=(dump prompt update .githooks/pre-commit .githooks/pre-push)
 
 collect_files() {
   local -a found=()
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    # Tracked files only. This cannot walk into scripts/script-helpers or
-    # scripts/ci-helpers, which are gitignored clones of other repositories and
-    # are not ours to lint.
+    # Tracked files AND untracked ones that are not ignored.
+    #
+    # --others is not optional: with --cached alone a script that has been
+    # written but not yet `git add`ed is invisible, so the lint reports OK
+    # having never opened the file you just wrote. --exclude-standard still
+    # honours .gitignore, so this cannot walk into scripts/script-helpers or
+    # scripts/ci-helpers, which are clones of other repositories and are not
+    # ours to lint.
     while IFS= read -r f; do
       [ -n "$f" ] && found+=("$f")
-    done < <(git ls-files -- '*.sh' "${EXTENSIONLESS[@]}")
+    done < <(git ls-files --cached --others --exclude-standard -- '*.sh' "${EXTENSIONLESS[@]}" | sort -u)
   else
     while IFS= read -r -d '' f; do
       found+=("${f#./}")
@@ -49,7 +54,17 @@ fi
 printf 'lint: checking %d shell files\n' "${#FILES[@]}"
 
 printf 'lint: bash -n\n'
-bash -n "${FILES[@]}"
+# One file per invocation, deliberately.
+#
+# `bash -n a.sh b.sh` syntax-checks ONLY a.sh — b.sh and the rest become $1, $2
+# … and are never read. It exits 0 on a file with an unterminated `if` as long
+# as the first file is clean, which is how the previous inline CI command left
+# `prompt` and `update` unchecked while appearing to cover them.
+bash_n_failed=0
+for f in "${FILES[@]}"; do
+  bash -n "$f" || bash_n_failed=1
+done
+[ "$bash_n_failed" -eq 0 ] || exit 1
 
 if command -v shellcheck >/dev/null 2>&1; then
   printf 'lint: shellcheck\n'

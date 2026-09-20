@@ -185,11 +185,14 @@ collect_recovery_profile() {
   mv "$BACKUP_ROOT/device/recovery_profile/"* "$profile_root/"
   find "$profile_root" -maxdepth 1 -type f -exec chmod 600 {} +
   printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
-  if grep -Fx "package:com.android.chrome" "$profile_root/apps.txt" >/dev/null 2>&1; then
+  # adb commonly allocates a PTY and returns CRLF, so `grep -Fx "package:x"`
+  # never matched "package:x\r" and the guidance below was silently skipped.
+  has_package() { tr -d '\r' < "$profile_root/apps.txt" | grep -Fxq "package:$1"; }
+  if has_package com.android.chrome; then
     printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
   fi
   for app in com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-    if grep -Fx "package:$app" "$profile_root/apps.txt" >/dev/null 2>&1; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
+    if has_package "$app"; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
   done
   chmod 600 "$profile_root/recovery_actions.txt"
   if adb shell "su -c id" >/dev/null 2>&1; then
@@ -267,6 +270,12 @@ if [ $? -ne 0 ]; then
   printf 'Backup cancelled.\n'
   exit 1
 fi
+
+# Reset before reading the checklist. The --recovery-profile flag sets this to
+# 1 up front so the box starts checked; without clearing it here, unchecking
+# the box left it at 1 and the profile was collected against the user's
+# explicit choice.
+RECOVERY_PROFILE=0
 
 for choice in $CHOICES; do
   case "$choice" in

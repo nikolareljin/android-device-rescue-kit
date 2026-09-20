@@ -1,12 +1,18 @@
 name: Release Tag Check
 
+# `push` only. A `create:` trigger was also declared with a `branches:` filter,
+# but ref filters are honoured solely for push/pull_request/pull_request_target,
+# so on `create` it was inert: the workflow ran for every branch and every tag
+# created in the repository, and duplicated itself on release-branch creation
+# because `git push -u` emits both events. `push` alone covers branch creation
+# and every later push.
 on:
-  create:
-    branches:
-      - "release/*"
   push:
     branches:
       - "release/*"
+
+permissions:
+  contents: read
 
 jobs:
   check:
