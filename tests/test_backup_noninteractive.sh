@@ -110,8 +110,13 @@ case "${1:-}" in
         exit 0 ;;
       "settings put global stay_on_while_plugged_in"*)
         v="${cmd##* }"
-        printf '%s\n' "$v" >"${MOCK_WORK}/stayon"
         printf '%s\n' "$v" >>"${MOCK_WORK}/stayon_writes.txt"
+        # A phone that has been unplugged or rebooted accepts the command and
+        # changes nothing. writes_fail names the value to swallow, so the hold
+        # can succeed and only the restore fail -- which is the case worth
+        # testing. Failing both writes would leave nothing to restore at all.
+        if [ "$v" = "$(cat "${MOCK_WORK}/writes_fail" 2>/dev/null)" ]; then exit 0; fi
+        printf '%s\n' "$v" >"${MOCK_WORK}/stayon"
         exit 0 ;;
       "cmd power wakeup"*)
         printf 'wakeup\n' >>"${MOCK_WORK}/wake_calls.txt"
@@ -152,6 +157,7 @@ printf '0\n' >"$WORK/stayon"
 printf '0\n' >"$WORK/locked"
 : >"$WORK/stayon_writes.txt"
 : >"$WORK/wake_calls.txt"
+: >"$WORK/writes_fail"
 export PATH="$BIN:$PATH"
 
 BK="$WORK/backup"
@@ -361,6 +367,68 @@ wait "$bg" 2>/dev/null
 check "SIGINT restores the original value" "0" "$(cat "$WORK/stayon" | tr -d ' ')"
 check "and the restore was the last write" "0" "$(tail -1 "$WORK/stayon_writes.txt")"
 printf '0\n' >"$WORK/locked"
+
+# --- a failed restore keeps the record and says so ------------------------
+#
+#     Deleting the state file when the restore did not take would destroy the
+#     only evidence of what the phone had, leaving it changed and untraceable.
+
+: >"$WORK/stayon_writes.txt"
+printf '0\n' >"$WORK/stayon"
+BK12="$WORK/backup12"; mkdir -p "$BK12"
+printf '0\n' >"$WORK/writes_fail"        # the restore to 0 is swallowed; the hold to 2 works
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK12" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/out12.txt" 2>&1 )
+: >"$WORK/writes_fail"
+check "a failed restore is reported" "1" \
+  "$(grep -c 'Could not restore' "$WORK/out12.txt")"
+check "it prints the command to fix it by hand" "1" \
+  "$(grep -c 'adb shell settings put global stay_on_while_plugged_in 0' "$WORK/out12.txt")"
+check "the record is KEPT when the restore failed" "present" \
+  "$([ -f "$BK12/.screen_state" ] && echo present || echo absent)"
+check "and it still holds the original value" "0" \
+  "$(cat "$BK12/.screen_state" 2>/dev/null | tr -d ' ')"
+
+# --- an unwritable record means the phone is not touched at all -----------
+
+: >"$WORK/stayon_writes.txt"
+printf '0\n' >"$WORK/stayon"
+BK13="$WORK/backup13"; mkdir -p "$BK13"
+# A directory where the state file should go: the write cannot succeed.
+mkdir -p "$BK13/.screen_state"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK13" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/out13.txt" 2>&1 )
+check "an unrecordable setting is left alone" "0" \
+  "$(wc -l <"$WORK/stayon_writes.txt" | tr -d ' ')"
+check "and that is said out loud" "1" \
+  "$(grep -c 'Cannot record the screen setting' "$WORK/out13.txt")"
+rmdir "$BK13/.screen_state" 2>/dev/null || true
+
+# --- an explicit --recovery-profile is not silently dropped ---------------
+#
+#     --select omitting the category, with the flag given on the same command
+#     line, used to skip the step somebody asked for by name.
+
+printf '0\n' >"$WORK/stayon"
+BK14="$WORK/backup14"; mkdir -p "$BK14"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK14" \
+    --recovery-profile --no-encrypt --non-interactive --select downloads \
+    >"$WORK/out14.txt" 2>&1 )
+check "the flag still collects the profile" "present" \
+  "$([ -d "$BK14/recovery_profile" ] && echo present || echo absent)"
+check "and says it is doing so" "1" \
+  "$(grep -c 'omits recovery_profile; collecting it anyway' "$WORK/out14.txt")"
+check "the selected category also ran" "present" \
+  "$([ -d "$BK14/shared/Download" ] && echo present || echo absent)"
+
+# Without the flag, an omitted category stays omitted.
+BK15="$WORK/backup15"; mkdir -p "$BK15"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK15" \
+    --no-encrypt --non-interactive --select downloads >"$WORK/out15.txt" 2>&1 )
+check "no flag means no profile" "absent" \
+  "$([ -d "$BK15/recovery_profile" ] && echo present || echo absent)"
 
 # --- a missing --select is refused rather than hanging ---------------------
 

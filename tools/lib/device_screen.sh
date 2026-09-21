@@ -108,13 +108,26 @@ screen_wake() {
 screen_hold_begin() {
   [ "$SCREEN_CONTROL" -eq 1 ] || return 0
   [ -n "$SCREEN_STATE_FILE" ] || return 0
-  if [ -s "$SCREEN_STATE_FILE" ]; then
+  # -f, not -s. `-s` is true for a directory too, so a path that cannot hold the
+  # record was read as a record that already existed, and the guard below was
+  # skipped entirely.
+  if [ -f "$SCREEN_STATE_FILE" ]; then
     screen_wake
     return 0
   fi
   local original
   original="$(screen_parse_stayon "$(adb shell settings get global stay_on_while_plugged_in </dev/null 2>/dev/null)")"
-  printf '%s\n' "$original" >"$SCREEN_STATE_FILE"
+
+  # Record first, and refuse to touch the phone if the record cannot be kept.
+  #
+  # Writing the setting with nowhere to note the old value is how a phone gets
+  # left changed permanently: screen_hold_end would find no file, return
+  # quietly, and nothing would ever put it back.
+  if ! printf '%s\n' "$original" >"$SCREEN_STATE_FILE" 2>/dev/null; then
+    print_warning "Cannot record the screen setting at $SCREEN_STATE_FILE; leaving the phone's screen settings alone."
+    return 0
+  fi
+
   adb shell settings put global stay_on_while_plugged_in "$SCREEN_STAYON_USB" </dev/null >/dev/null 2>&1 || true
   screen_wake
 }
@@ -126,11 +139,30 @@ screen_hold_begin() {
 # had stay-awake enabled must keep it.
 screen_hold_end() {
   [ -n "$SCREEN_STATE_FILE" ] || return 0
-  [ -s "$SCREEN_STATE_FILE" ] || return 0
-  local original
+  [ -f "$SCREEN_STATE_FILE" ] || return 0
+  local original readback
   original="$(screen_parse_stayon "$(cat "$SCREEN_STATE_FILE" 2>/dev/null)")"
   adb shell settings put global stay_on_while_plugged_in "$original" </dev/null >/dev/null 2>&1 || true
-  rm -f "$SCREEN_STATE_FILE"
+
+  # Read it back rather than trusting the write. `settings put` can report
+  # nothing useful, and a phone that has been unplugged or has rebooted will
+  # accept the command into the void.
+  readback="$(screen_parse_stayon "$(adb shell settings get global stay_on_while_plugged_in </dev/null 2>/dev/null)")"
+  if [ "$readback" = "$original" ]; then
+    rm -f "$SCREEN_STATE_FILE"
+    return 0
+  fi
+
+  # The record is deliberately kept. It is the only evidence of what the phone
+  # had, and deleting it here would make the change permanent and untraceable.
+  if [ "${SCREEN_RESTORE_REPORTED:-0}" -eq 1 ]; then
+    return 1
+  fi
+  SCREEN_RESTORE_REPORTED=1
+  print_error "Could not restore the phone's screen setting to $original (it reads $readback)."
+  print_error "Reconnect the phone and run: adb shell settings put global stay_on_while_plugged_in $original"
+  print_error "The original value is recorded at $SCREEN_STATE_FILE"
+  return 1
 }
 
 # Wake the phone and get it unlocked, or report that it could not be.
@@ -146,7 +178,10 @@ screen_wait_unlock() {
   dump="$(screen_keyguard_dump)"
   hint="$(screen_unlock_hint "$dump")"
 
-  if [ "${INTERACTIVE:-1}" -eq 1 ]; then
+  # ui_yesno belongs to the calling script, not this library. Falling back to
+  # the polling path keeps the library usable on its own rather than dying with
+  # "command not found" in the middle of a rescue.
+  if [ "${INTERACTIVE:-1}" -eq 1 ] && command -v ui_yesno >/dev/null 2>&1; then
     while :; do
       if ui_yesno "Unlock The Phone" "The phone is locked, and the password export cannot be reached through a lock screen.\n\n$hint\n\nChoose Yes once it is unlocked.\nChoose No to skip the credential step and continue with the rest of the backup." yes; then
         screen_wake

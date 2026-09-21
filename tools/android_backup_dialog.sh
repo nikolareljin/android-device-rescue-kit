@@ -46,6 +46,9 @@ ui_yesno() {
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RECOVERY_PROFILE=0
+# Whether --recovery-profile was passed, as distinct from whether the category
+# ended up selected. The flag is an instruction; the checklist is a choice.
+RECOVERY_PROFILE_REQUESTED=0
 # Keep the readable profile alongside the encrypted archive.
 #
 # Default is 1: the plaintext profile is kept unless the owner says otherwise.
@@ -74,7 +77,7 @@ SCREEN_CONTROL=1
 BACKUP_DESTINATION=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --recovery-profile) RECOVERY_PROFILE=1 ;;
+    --recovery-profile) RECOVERY_PROFILE=1; RECOVERY_PROFILE_REQUESTED=1 ;;
     --keep-plaintext) KEEP_PLAINTEXT=1; NO_PROMPT_PLAINTEXT=1 ;;
     --discard-plaintext) KEEP_PLAINTEXT=0; NO_PROMPT_PLAINTEXT=1 ;;
     --no-encrypt) ENCRYPT_PROFILE=0 ;;
@@ -667,6 +670,18 @@ RECOVERY_PROFILE=0
 case " $(printf '%s' "$CHOICES" | tr '\n' ' ') " in
   *" recovery_profile "*) RECOVERY_PROFILE=1 ;;
 esac
+
+# An explicit --recovery-profile is an instruction, not a default.
+#
+# Unchecking the box in the dialog must still turn it off -- that is a choice
+# made after the flag. But a --select that simply omits the category, with the
+# flag given on the same command line, was silently dropping the step somebody
+# asked for by name. That is the shape of a backup that loses what it was told
+# to keep.
+if [ "$RECOVERY_PROFILE_REQUESTED" -eq 1 ] && [ "$RECOVERY_PROFILE" -eq 0 ] && [ "$INTERACTIVE" -eq 0 ]; then
+  print_warning "--recovery-profile was given but --select omits recovery_profile; collecting it anyway."
+  RECOVERY_PROFILE=1
+fi
 
 RECOVERY_SKIPPED=0
 if [ "$RECOVERY_PROFILE" -eq 1 ]; then

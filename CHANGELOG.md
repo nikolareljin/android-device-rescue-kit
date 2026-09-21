@@ -26,6 +26,24 @@ notes from it and matches nothing else.
   stay-awake on keeps it.
 - `--no-screen-control` opts out entirely.
 
+### Putting the setting back, when putting it back does not work
+
+- The restore is **read back and compared**, not assumed. `settings put` can be
+  accepted into the void by a phone that has been unplugged, rebooted or has
+  dropped its debugging authorisation -- all of which happened during testing.
+- When the restore does not take, the recorded original is **kept**, and the
+  command to apply it by hand is printed. Deleting the record on a failed
+  restore destroyed the only evidence of what the phone had, leaving it modified
+  and untraceable -- the exact outcome the traps exist to prevent.
+- If the record cannot be written at all, the phone is **not touched**. Changing
+  a persistent setting with nowhere to note the old value is how a device gets
+  left that way for good.
+- `[ -s ]` is true for a directory, so a path that could not hold the record was
+  read as a record that already existed and the guard above was skipped. `-f`.
+- `--recovery-profile` is no longer silently dropped when `--select` omits the
+  category. The flag is an instruction; unchecking the box in the dialog is a
+  later choice and still wins.
+
 ### A locked phone no longer wastes the run
 
 - If the phone cannot be unlocked the credential step is **skipped**, loudly and
