@@ -24,10 +24,9 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ''
 Write-Host 'Installed in WSL. Run these commands from PowerShell or Windows Terminal:'
-Write-Host "  wsl bash -lc '~/.local/bin/android-rescue-dump --help'"
-
-Write-Host "  wsl bash -lc '~/.local/bin/android-rescue-dump data /mnt/c/AndroidBackups'"
-
-Write-Host "  wsl bash -lc '~/.local/bin/android-rescue-prompt /mnt/c/AndroidCaptures/example'"
+Write-Host "  wsl bash -lc '~/.local/bin/adrescue --help'"
+Write-Host "  wsl bash -lc '~/.local/bin/adrescue probe'"
+Write-Host "  wsl bash -lc '~/.local/bin/adrescue data /mnt/c/AndroidBackups/phone-before-reset'"
 Write-Host ''
+Write-Host 'Inside a WSL shell it is just: adrescue probe'
 Write-Host 'Use /mnt/c/... paths for Windows folders when running the toolkit through WSL.'
