@@ -95,7 +95,7 @@ while [ "$#" -gt 0 ]; do
     -h|--help)
       # Name the command the user actually types, not this script's path.
       cat <<USAGE
-Usage: ${ANDROID_RESCUE_CMD:-./dump data} [destination] [options]
+Usage: ${ANDROID_RESCUE_CMD:-tools/android_backup_dialog.sh} [destination] [options]
 
   --recovery-profile          Collect settings, networks, app guidance and
                               owner-exported credentials.

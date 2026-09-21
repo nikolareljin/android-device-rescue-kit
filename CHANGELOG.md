@@ -3,6 +3,20 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.6.1
+
+### Leftovers from the adrescue rename
+
+- The README banner still showed `$ ./dump data --recovery-profile`. It is the
+  first thing anyone sees on the repository page, and it named a command the
+  documentation no longer mentions. It now reads `adrescue data
+  --recovery-profile`, and fits inside the terminal box: the old text already
+  overflowed its right border.
+- `tools/android_backup_dialog.sh` fell back to printing `./dump data` in its
+  usage line when run directly rather than through `adrescue`. It now names its
+  own path, matching `android_restore_dialog.sh` and
+  `verify_recovery_archive.sh`.
+
 ## 2026-09-21 — v0.6.0
 
 ### One command
