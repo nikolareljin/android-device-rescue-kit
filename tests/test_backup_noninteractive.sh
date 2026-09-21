@@ -105,6 +105,25 @@ case "${1:-}" in
         # CRLF on purpose: some adb/device combinations return it.
         printf 'package:com.android.chrome\r\npackage:com.samsung.android.samsungpass\r\npackage:com.azure.authenticator\r\n' ;;
       "getprop"*) printf 'prop\n' ;;
+      "settings get global stay_on_while_plugged_in"*)
+        cat "${MOCK_WORK}/stayon" 2>/dev/null || printf '0\n'
+        exit 0 ;;
+      "settings put global stay_on_while_plugged_in"*)
+        v="${cmd##* }"
+        printf '%s\n' "$v" >"${MOCK_WORK}/stayon"
+        printf '%s\n' "$v" >>"${MOCK_WORK}/stayon_writes.txt"
+        exit 0 ;;
+      "cmd power wakeup"*)
+        printf 'wakeup\n' >>"${MOCK_WORK}/wake_calls.txt"
+        exit 0 ;;
+      "dumpsys window policy"*)
+        # MOCK_LOCKED controls whether the fake phone shows a keyguard.
+        if [ "$(cat "${MOCK_WORK}/locked" 2>/dev/null || echo 0)" = "1" ]; then
+          printf '    KeyguardServiceDelegate\n      showing=true\n      secure=false\n      dreaming=true\n'
+        else
+          printf '    KeyguardServiceDelegate\n      showing=false\n      secure=false\n      dreaming=false\n'
+        fi
+        exit 0 ;;
       "cmd package resolve-activity"*)
         # Chrome has a launcher activity; Samsung Pass deliberately does not.
         case "$cmd" in
@@ -128,6 +147,11 @@ MOCK
 chmod +x "$BIN/adb"
 
 export MOCK_DEVICE="$DEVICE" MOCK_WORK="$WORK"
+# The fake phone starts unlocked, with the Android default stay-on value.
+printf '0\n' >"$WORK/stayon"
+printf '0\n' >"$WORK/locked"
+: >"$WORK/stayon_writes.txt"
+: >"$WORK/wake_calls.txt"
 export PATH="$BIN:$PATH"
 
 BK="$WORK/backup"
@@ -175,8 +199,10 @@ check "detected managers are listed in the guidance" "1" \
   "$(grep -c 'com.samsung.android.samsungpass' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
 check "so is Chrome" "1" \
   "$(grep -c '(com.android.chrome)' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+# The hint now warns about the biometric prompt, because Samsung Pass demands
+# one on arrival at the export screen and a user who is not told assumes a fault.
 check "the export hint travels with it" "1" \
-  "$(grep -c 'Samsung Pass > ⋮ > Settings > Export data' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+  "$(grep -c 'fingerprint or PIN first' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
 check "a manager that is NOT installed is not listed" "0" \
   "$(grep -c 'Bitwarden' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
 check "unattended with no --open-manager opens nothing" "absent" \
@@ -211,8 +237,10 @@ BK5="$WORK/backup5"; mkdir -p "$BK5"
     --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
     --open-manager com.samsung.android.samsungpass \
     >"$WORK/out5.txt" 2>&1 )
+# The target is the import/export menu itself, not the Settings screen it used
+# to land on several taps away.
 check "launch-spec app opens via am start" "1" \
-  "$(grep -c 'am start -n com.android.settings' "$WORK/am_calls.txt")"
+  "$(grep -c 'am start -a com.samsung.android.samsungpass.action.SETTINGS' "$WORK/am_calls.txt")"
 check "and not via monkey" "0" "$(wc -l <"$WORK/monkey_calls.txt" | tr -d ' ')"
 check "manifest records the route" "1" \
   "$(grep -c 'OPENED com.samsung.android.samsungpass via' "$BK5/backup_manifest.txt")"
@@ -243,6 +271,96 @@ check "a manager that is not installed opens nothing" "0" \
   "$(wc -l <"$WORK/monkey_calls.txt" | tr -d ' ')"
 check "and says so" "1" \
   "$(grep -c 'com.bitwarden is not installed' "$WORK/out4.txt")"
+
+# --- screen control: recorded, held, and put back --------------------------
+
+: >"$WORK/stayon_writes.txt"; : >"$WORK/wake_calls.txt"
+printf '0\n' >"$WORK/stayon"; printf '0\n' >"$WORK/locked"
+BK7="$WORK/backup7"; mkdir -p "$BK7"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK7" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/out7.txt" 2>&1 )
+check "screen-control run exits 0" "0" "$?"
+check "the screen was woken" "1" \
+  "$([ -s "$WORK/wake_calls.txt" ] && echo 1 || echo 0)"
+check "stay-on was set to the USB bit" "1" \
+  "$(grep -cx '2' "$WORK/stayon_writes.txt")"
+# The value that matters: whatever the phone is left holding at the end.
+check "the original value was restored" "0" "$(cat "$WORK/stayon" | tr -d ' ')"
+check "the last write was the restore" "0" "$(tail -1 "$WORK/stayon_writes.txt")"
+check "the state file is cleaned up" "absent" \
+  "$([ -f "$BK7/.screen_state" ] && echo present || echo absent)"
+
+# --- a non-default original must be preserved, not zeroed -----------------
+#
+#     Restoring a hardcoded 0 would silently disable stay-awake on a phone whose
+#     owner had deliberately enabled it.
+
+: >"$WORK/stayon_writes.txt"
+printf '15\n' >"$WORK/stayon"
+BK8="$WORK/backup8"; mkdir -p "$BK8"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK8" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/out8.txt" 2>&1 )
+check "a non-default original is restored, not zeroed" "15" "$(cat "$WORK/stayon" | tr -d ' ')"
+printf '0\n' >"$WORK/stayon"
+
+# --- --no-screen-control writes nothing -----------------------------------
+
+: >"$WORK/stayon_writes.txt"; : >"$WORK/wake_calls.txt"
+BK9="$WORK/backup9"; mkdir -p "$BK9"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK9" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    --no-screen-control >"$WORK/out9.txt" 2>&1 )
+check "--no-screen-control run exits 0" "0" "$?"
+check "--no-screen-control writes no setting" "0" \
+  "$(wc -l <"$WORK/stayon_writes.txt" | tr -d ' ')"
+check "--no-screen-control does not wake" "0" \
+  "$(wc -l <"$WORK/wake_calls.txt" | tr -d ' ')"
+
+# --- a locked phone unattended: skip credentials, finish everything else ---
+
+: >"$WORK/stayon_writes.txt"
+printf '1\n' >"$WORK/locked"
+BK10="$WORK/backup10"; mkdir -p "$BK10"
+( cd "$ROOT" && SCREEN_UNLOCK_TIMEOUT=5 bash tools/android_backup_dialog.sh "$BK10" \
+    --recovery-profile --no-encrypt --non-interactive \
+    --select downloads,recovery_profile >"$WORK/out10.txt" 2>&1 )
+check "a locked phone does not fail the backup" "0" "$?"
+check "the skip is recorded in the manifest" "1" \
+  "$(grep -c 'SKIPPED credential steps: phone stayed locked' "$BK10/backup_manifest.txt")"
+check "no recovery profile was written" "absent" \
+  "$([ -d "$BK10/recovery_profile" ] && echo present || echo absent)"
+check "the other category still ran" "present" \
+  "$([ -d "$BK10/shared/Download" ] && echo present || echo absent)"
+check "the skip is stated at the end too" "1" \
+  "$(grep -c 'NOT CAPTURED' "$WORK/out10.txt")"
+check "the setting is still restored when skipping" "0" "$(cat "$WORK/stayon" | tr -d ' ')"
+printf '0\n' >"$WORK/locked"
+
+# --- interrupted mid-run: the phone must not be left changed --------------
+#
+#     stay_on_while_plugged_in survives a reboot, so a Ctrl-C that skipped the
+#     restore would permanently alter someone else's phone.
+
+: >"$WORK/stayon_writes.txt"
+printf '0\n' >"$WORK/stayon"; printf '1\n' >"$WORK/locked"
+BK11="$WORK/backup11"; mkdir -p "$BK11"
+# `exec` is load-bearing. Without it $! is the subshell's pid, the signal never
+# reaches the script, and the run simply polls to its timeout and restores on
+# the normal path -- so the test passes whether or not the traps exist.
+( cd "$ROOT" && SCREEN_UNLOCK_TIMEOUT=60 exec bash tools/android_backup_dialog.sh "$BK11" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/out11.txt" 2>&1 ) &
+bg=$!
+# Long enough to be inside the unlock wait, with the setting already changed.
+sleep 6
+check "the setting was changed before the interrupt" "2" "$(cat "$WORK/stayon" | tr -d ' ')"
+kill -INT "$bg" 2>/dev/null
+wait "$bg" 2>/dev/null
+check "SIGINT restores the original value" "0" "$(cat "$WORK/stayon" | tr -d ' ')"
+check "and the restore was the last write" "0" "$(tail -1 "$WORK/stayon_writes.txt")"
+printf '0\n' >"$WORK/locked"
 
 # --- a missing --select is refused rather than hanging ---------------------
 

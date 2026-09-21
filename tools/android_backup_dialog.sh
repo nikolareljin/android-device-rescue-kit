@@ -4,6 +4,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=tools/lib/device_screen.sh
+source "$SCRIPT_DIR/lib/device_screen.sh"
 
 require_tool adb || exit 1
 check_if_dialog_installed || exit 1
@@ -66,6 +68,9 @@ CREDENTIAL_EXPORTS=()
 # open nothing (unattended).
 OPEN_MANAGERS=()
 LIST_MANAGERS=0
+# Writing to the phone's settings is opt-out. --no-screen-control leaves the
+# device untouched, for a handset where the write is refused or unwelcome.
+SCREEN_CONTROL=1
 BACKUP_DESTINATION=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -78,6 +83,7 @@ while [ "$#" -gt 0 ]; do
     --credential-export) CREDENTIAL_EXPORTS+=("${2:-}"); shift ;;
     --open-manager) OPEN_MANAGERS+=("${2:-}"); shift ;;
     --list-managers) LIST_MANAGERS=1 ;;
+    --no-screen-control) SCREEN_CONTROL=0 ;;
     -h|--help)
       # Name the command the user actually types, not this script's path.
       cat <<USAGE
@@ -102,6 +108,10 @@ Usage: ${ANDROID_RESCUE_CMD:-./dump data} [destination] [options]
                               opens nothing.
   --list-managers             Print the managers installed on the attached phone
                               and exit.
+  --no-screen-control         Do not touch the phone's screen settings. By
+                              default the steps that need someone at the handset
+                              hold the screen awake and put the setting back
+                              afterwards.
 USAGE
       exit 0 ;;
     --*) print_error "Unknown option: $1"; exit 1 ;;
@@ -645,6 +655,52 @@ fi
 # explicit choice.
 RECOVERY_PROFILE=0
 
+# The credential step runs first, before any bulk copy.
+#
+# It is the only part that needs someone at the handset, and it used to run
+# last -- after a photo pull that took 45 minutes on the phone this was tested
+# against. Whoever is standing there should be asked for what is needed while
+# they are still standing there.
+#
+# CHOICES is scanned for it up front because the flag used to be set from inside
+# the loop below, which is what put the step at the end.
+case " $(printf '%s' "$CHOICES" | tr '\n' ' ') " in
+  *" recovery_profile "*) RECOVERY_PROFILE=1 ;;
+esac
+
+RECOVERY_SKIPPED=0
+if [ "$RECOVERY_PROFILE" -eq 1 ]; then
+  SCREEN_STATE_FILE="$BACKUP_ROOT/.screen_state"
+
+  # stay_on_while_plugged_in survives a reboot, so an interrupted run must not
+  # leave a stranger's phone set to never sleep while charging. The trap is
+  # armed before the setting is touched and covers the signals a terminal
+  # actually sends; screen_hold_end is idempotent, so the normal path calling it
+  # too is harmless.
+  trap 'screen_hold_end' EXIT
+  trap 'screen_hold_end; exit 130' INT
+  trap 'screen_hold_end; exit 143' TERM
+
+  screen_hold_begin
+
+  if screen_wait_unlock; then
+    if ! collect_recovery_profile; then
+      screen_hold_end
+      print_error "Recovery profile was not completed. Review backup_manifest.txt before wiping the phone."
+      exit 1
+    fi
+  else
+    # Not a failure of the backup: everything else still runs. But it must be
+    # impossible to miss, because the phone may be wiped on the strength of it.
+    RECOVERY_SKIPPED=1
+    log_manifest "SKIPPED credential steps: phone stayed locked"
+    print_warning "PHONE STAYED LOCKED — credentials and settings were NOT captured."
+    ui_msg "Credentials Skipped" "The phone stayed locked, so the password export could not be reached.\n\nNO CREDENTIALS OR SETTINGS WERE CAPTURED.\n\nEverything else is still being backed up. To capture them, unlock the phone and run again with --recovery-profile."
+  fi
+
+  screen_hold_end
+fi
+
 for choice in $CHOICES; do
   case "$choice" in
     photos)
@@ -688,7 +744,7 @@ for choice in $CHOICES; do
       capture_text accounts_redaction_warning.txt printf 'Account details are intentionally not collected by this script.\n'
       ;;
     recovery_profile)
-      RECOVERY_PROFILE=1
+      # Already handled above, before the copies.
       ;;
     adb_backup)
       print_warning 'Trying deprecated adb backup. Confirm on the phone if prompted.'
@@ -700,11 +756,6 @@ for choice in $CHOICES; do
       ;;
   esac
 done
-
-if [ "$RECOVERY_PROFILE" -eq 1 ] && ! collect_recovery_profile; then
-  print_error "Recovery profile was not completed. Review backup_manifest.txt before wiping the phone."
-  exit 1
-fi
 
 cat >>"$MANIFEST" <<EOF
 
@@ -726,6 +777,13 @@ fi
 # to confirm the readable tree and the encrypted archive are BOTH present and
 # agree; leaving that to be inferred from the manifest is how it goes unchecked.
 completion_detail=""
+# A skipped credential step is reported at the end as well as when it happens.
+# The closing summary is the thing someone reads before wiping the phone, and it
+# previously mentioned only outright failures.
+if [ "$RECOVERY_SKIPPED" -eq 1 ]; then
+  completion_detail="\n\nCREDENTIALS AND SETTINGS WERE NOT CAPTURED.\nThe phone stayed locked. Unlock it and run again with --recovery-profile\nbefore wiping this device."
+  print_warning "Credentials and settings were NOT captured: the phone stayed locked."
+fi
 if [ "$RECOVERY_PROFILE" -eq 1 ] && [ -d "$BACKUP_ROOT/recovery_profile" ]; then
   if [ -f "$BACKUP_ROOT/recovery-profile.tar.gpg" ]; then
     completion_detail="\n\nRecovery profile, both copies:\n  readable:  $BACKUP_ROOT/recovery_profile/\n  encrypted: $BACKUP_ROOT/recovery-profile.tar.gpg\n\nConfirm they agree:\n  tools/verify_recovery_archive.sh $BACKUP_ROOT"

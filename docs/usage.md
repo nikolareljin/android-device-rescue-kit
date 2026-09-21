@@ -18,6 +18,7 @@ Every prompt has a non-interactive equivalent, so the backup can be scripted:
 | `--select a,b,c` | Categories to back up. |
 | `--credential-export PATH` | Device path of an exported credential file. Repeatable. |
 | `--open-manager PKG` | Open this password manager so its own export can be run. Repeatable. |
+| `--no-screen-control` | Do not touch the phone's screen settings at all. |
 | `--list-managers` | Print the managers installed on the attached phone and exit. |
 | `--no-encrypt` | Write the recovery profile readable, build no archive. |
 | `--keep-plaintext` | Keep the readable copy without asking (the default). |

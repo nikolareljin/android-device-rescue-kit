@@ -3,6 +3,66 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.5.0
+
+### The phone stays awake for the step that needs you
+
+- The credential step now runs **first**, before the bulk copies. It is the only
+  part that needs someone at the handset, and it used to run last -- after a
+  photo copy that took 45 minutes on the phone this was tested against.
+- For that step only, the screen is held awake. The previous run opened Samsung
+  Pass behind a dark, locked screen and reported `OPENED`: the activity started
+  and there was nothing visible to act on.
+- The lever is `stay_on_while_plugged_in`, set to `2`, the USB bit alone.
+  Deliberately not `svc power stayon true`, which writes the whole mask -- 15 on
+  an Android 16 build exposing DOCK -- and would quietly enable stay-awake for
+  wireless and dock charging nobody asked about. `screen_off_timeout` is left
+  alone: on a Samsung handset `com.samsung.android.lool` owns it and rewrites it.
+- **That setting survives a reboot, so it is restored through an EXIT, INT and
+  TERM trap**, armed before the value is touched. The repository had no INT or
+  TERM trap anywhere until now, so an interrupted run would have left a
+  stranger's phone permanently set to never sleep while charging. The recorded
+  original is restored, never a hardcoded `0` -- a phone that legitimately had
+  stay-awake on keeps it.
+- `--no-screen-control` opts out entirely.
+
+### A locked phone no longer wastes the run
+
+- If the phone cannot be unlocked the credential step is **skipped**, loudly and
+  twice -- when it happens and again in the closing summary, which previously
+  mentioned only outright failures -- and everything else still completes.
+- Unattended, it wakes the phone and polls for two minutes in case somebody is
+  nearby, then gives up rather than stalling a scripted run.
+- Lock detection reads `showing=` from the keyguard, not `deviceLocked=`: the
+  test handset reports `deviceLocked=0` with a swipe lockscreen still covering
+  the display, so the obvious field is the wrong one. Unreadable output counts
+  as locked, because "dumpsys said nothing" and "the phone is ready" must not
+  produce the same answer.
+
+### Pointing at the screen you actually need
+
+- Samsung Pass opens at its import/export menu
+  (`SHOW_IMPORT_EXPORT_MENU`) rather than the Settings screen several taps away,
+  and the instructions now say that Samsung Pass demands a fingerprint or PIN on
+  arrival -- expected, not a fault.
+- Google Password Manager gains a real target
+  (`GOOGLE_PASSWORD_MANAGER_PROXY_INTENT`). Chrome keeps none, because it has
+  none: it hands passwords to Credential Manager, and its password page is a
+  WebUI rather than an activity. Its entry now says so instead of implying a
+  path that does not exist.
+
+### Tests
+
+- `tests/test_device_screen.sh` -- parsers tested against real `dumpsys window
+  policy` output captured from the device, including the case where `showing=`
+  and `deviceLocked=` disagree, which is what pins the behaviour.
+- The unattended suite gains mock arms for `settings get/put global`,
+  `cmd power wakeup` and `dumpsys window policy`; without them the mock's
+  catch-all would have made every screen command silently succeed. It asserts
+  the original is recorded, a non-default original is preserved rather than
+  zeroed, `--no-screen-control` writes nothing, a locked phone skips without
+  failing the run, and **the value is restored after a real SIGINT**.
+
 ## 2026-09-20 — v0.4.0
 
 ### Photos are now found, not guessed at

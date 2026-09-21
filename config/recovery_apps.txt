@@ -8,14 +8,30 @@
 # app that has no launcher activity of its own, such as Samsung Pass, which
 # lives inside Settings and can never be opened by package name.
 #
+# Prefer the deepest screen that can actually be STARTED -- the point is to put
+# the export in front of the owner, not the app's front door.
+#
+# Verify with `am start`, never with `resolve-activity`. An activity that is not
+# exported to the shell still appears in the resolver and then refuses to start:
+# Samsung Pass's own SHOW_IMPORT_EXPORT_MENU resolves perfectly and answers
+# `am start` with "unable to resolve Intent", as does every Google autofill
+# settings action on this handset. Both were tried here and rejected.
+#
+#   adb shell am start -a <ACTION>     # must NOT print "Error:"
+#
+# An entry with no workable target is better left without one: the tool then
+# says the app has no launcher screen and shows the written steps, which is
+# honest, rather than landing the owner at Settings root as though it had
+# arrived somewhere useful.
+#
 # The tool never extracts anything from these apps. It can open one on the
 # phone so the owner can run that app's own export, and it imports the file
 # they produce. Adding a line here is all that is needed to support another
 # manager -- this file is read at run time.
 
-com.android.chrome|Chrome / Google Password Manager|Chrome > ⋮ > Settings > Google Password Manager > Settings > Export passwords
-com.google.android.gms|Google Password Manager|Settings > Google > Autofill > Google Password Manager > Settings > Export passwords
-com.samsung.android.samsungpass|Samsung Pass|Settings > Security and privacy > Samsung Pass > ⋮ > Settings > Export data|-n com.android.settings/.Settings$SecurityAndPrivacySettingsActivity
+com.android.chrome|Chrome|Chrome has no screen that reaches saved passwords; it hands them to Google Password Manager. Open that entry instead.
+com.google.android.gms|Google Password Manager|Open Settings > Google > All services > Autofill with Google > Google Password Manager, then the gear, then Export passwords. Chrome's passwords live here too.
+com.samsung.android.samsungpass|Samsung Pass|Samsung Pass asks for your fingerprint or PIN first -- that is expected. Then open its Settings and choose Export data.|-a com.samsung.android.samsungpass.action.SETTINGS
 com.bitwarden|Bitwarden|Settings > Vault > Export vault
 com.x8bit.bitwarden|Bitwarden|Settings > Vault > Export vault
 com.onepassword.android|1Password|Not exportable on Android; export from the desktop app or 1password.com

@@ -126,6 +126,22 @@ a machine with no terminal:
   --credential-export /sdcard/Download/passwords.csv
 ```
 
+### What this does to the phone
+
+The credential step is the only part needing someone at the handset, so it runs
+**first**, before the long copies. For that step only, the tool holds the screen
+awake by setting `stay_on_while_plugged_in` to the USB bit, and **puts the
+previous value back** when the step ends — including on Ctrl-C, since that
+setting survives a reboot and leaving it changed on someone else's phone would
+not be acceptable. `--no-screen-control` skips all of it.
+
+If the phone stays locked, the export cannot be reached, so the credential step
+is skipped and said so plainly — at the time and again in the closing summary —
+while the rest of the backup completes normally.
+
+Nothing else on the phone is modified. The tool never unlocks the device,
+enters a secret or approves a prompt.
+
 See what the attached phone actually has, then open the one you use:
 
 ```bash
