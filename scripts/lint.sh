@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # The entrypoints carry no .sh extension, so they have to be named.
-EXTENSIONLESS=(dump prompt update .githooks/pre-commit .githooks/pre-push)
+EXTENSIONLESS=(adrescue dump prompt update .githooks/pre-commit .githooks/pre-push)
 
 collect_files() {
   local -a found=()

@@ -1,0 +1,577 @@
+#!/usr/bin/env bash
+# SCRIPT: adrescue
+# DESCRIPTION: Single entrypoint for the Android Device Rescue Kit.
+# USAGE: adrescue <command> [arguments]
+set -euo pipefail
+
+# The path the user invoked is not the file git checked out. ~/.local/bin/adrescue
+# is a symlink into the install directory, and dirname does not follow it, so a
+# plain dirname "$0" makes every "$ROOT/tools/..." lookup miss. Loop rather than
+# readlink -f: BSD and macOS readlink have no -f.
+__src="${BASH_SOURCE[0]}"
+while [ -L "$__src" ]; do
+  __dir="$(cd -P "$(dirname "$__src")" && pwd)"
+  __src="$(readlink "$__src")"
+  case "$__src" in
+    /*) ;;
+    *) __src="$__dir/$__src" ;;
+  esac
+done
+ROOT="$(cd -P "$(dirname "$__src")" && pwd)"
+
+CONFIG_FILE="${ANDROID_RESCUE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/android-device-rescue-kit/config}"
+CONFIG_KEYS="data-dir work-dir"
+
+# How the user typed this command, so help and every tool's usage line say it
+# back. From a clone that is ./adrescue; through the PATH symlink it is adrescue.
+self_name() {
+  local dir
+  dir="$(cd -P "$(dirname "$0")" 2>/dev/null && pwd)" || dir=""
+  if [ "$dir" = "$ROOT" ]; then
+    printf './%s\n' "$(basename -- "$0")"
+  else
+    printf '%s\n' "$(basename -- "$0")"
+  fi
+}
+SELF="${ANDROID_RESCUE_SELF:-$(self_name)}"
+export ANDROID_RESCUE_SELF="$SELF"
+
+# A git checkout that is not the managed install directory. Deliberately not
+# "was it spelled ./adrescue": the absolute path to an installed copy is still
+# an installed copy, and must not scatter captures into the current directory.
+invoked_from_clone() {
+  [ "$ROOT" = "${ANDROID_RESCUE_INSTALL_DIR:-$HOME/.local/share/android-device-rescue-kit}" ] && return 1
+  [ -d "$ROOT/.git" ] || return 1
+  return 0
+}
+
+timestamp() { date +%Y%m%d-%H%M%S; }
+
+version_string() {
+  if [ -r "$ROOT/VERSION" ]; then
+    tr -d '[:space:]' <"$ROOT/VERSION"
+  else
+    printf 'unknown'
+  fi
+}
+
+# --- configuration -----------------------------------------------------------
+
+# Read with an allowlist, never `source`: the config file may have been copied
+# between machines, and sourcing it would execute whatever it contains.
+config_get() {
+  local key="$1" line value=""
+  [ -f "$CONFIG_FILE" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key="*) value="${line#*=}" ;;
+    esac
+  done <"$CONFIG_FILE"
+  printf '%s' "$value"
+}
+
+config_key_is_known() {
+  local candidate
+  for candidate in $CONFIG_KEYS; do
+    [ "$candidate" = "$1" ] && return 0
+  done
+  return 1
+}
+
+config_write() {
+  local key="$1" value="$2" line tmp
+  tmp="$(mktemp)"
+  if [ -f "$CONFIG_FILE" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        "$key="*) ;;
+        *) printf '%s\n' "$line" >>"$tmp" ;;
+      esac
+    done <"$CONFIG_FILE"
+  fi
+  [ -n "$value" ] && printf '%s=%s\n' "$key" "$value" >>"$tmp"
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  mv "$tmp" "$CONFIG_FILE"
+}
+
+OPT_DATA_DIR=""
+OPT_WORK_DIR=""
+RESOLVED_DIR=""
+RESOLVED_SOURCE=""
+
+# Precedence: --data-dir / --work-dir, then the environment, then the config
+# file, then a default. Sets RESOLVED_DIR and RESOLVED_SOURCE so `adrescue
+# config` can say where a value came from.
+resolve_dir() {
+  local kind="$1" flag="" env_value="" config_value=""
+  case "$kind" in
+    data) flag="$OPT_DATA_DIR"; env_value="${ANDROID_RESCUE_DATA_DIR:-}" ;;
+    work) flag="$OPT_WORK_DIR"; env_value="${ANDROID_RESCUE_WORK_DIR:-}" ;;
+  esac
+
+  if [ -n "$flag" ]; then
+    RESOLVED_DIR="$flag"
+    RESOLVED_SOURCE="--$kind-dir"
+    return
+  fi
+  if [ -n "$env_value" ]; then
+    RESOLVED_DIR="$env_value"
+    RESOLVED_SOURCE="ANDROID_RESCUE_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')_DIR"
+    return
+  fi
+  config_value="$(config_get "$kind-dir")"
+  if [ -n "$config_value" ]; then
+    RESOLVED_DIR="$config_value"
+    RESOLVED_SOURCE="$CONFIG_FILE"
+    return
+  fi
+  if invoked_from_clone; then
+    # Inside a clone, keep writing beside the checkout: .gitignore covers
+    # captures/, backups/ and photos/ there.
+    RESOLVED_DIR="."
+    RESOLVED_SOURCE="clone default"
+  else
+    RESOLVED_DIR="$HOME/android-rescue/$kind"
+    RESOLVED_SOURCE="default"
+  fi
+}
+
+default_destination() {
+  local kind="$1" subdir="$2"
+  resolve_dir "$kind"
+  if [ "$RESOLVED_DIR" = "." ]; then
+    printf '%s/%s\n' "$subdir" "$(timestamp)"
+  else
+    printf '%s/%s/%s\n' "$RESOLVED_DIR" "$subdir" "$(timestamp)"
+  fi
+}
+
+cmd_config() {
+  local action="${1:-show}" key="${2:-}" value="${3:-}"
+  case "$action" in
+    -h|--help|help) usage_for config; return 0 ;;
+    show)
+      printf 'config file  %s%s\n' "$CONFIG_FILE" \
+        "$([ -f "$CONFIG_FILE" ] || printf ' (not created yet)')"
+      resolve_dir data
+      printf 'data-dir     %s   (%s)\n' "$RESOLVED_DIR" "$RESOLVED_SOURCE"
+      resolve_dir work
+      printf 'work-dir     %s   (%s)\n' "$RESOLVED_DIR" "$RESOLVED_SOURCE"
+      ;;
+    set)
+      if [ -z "$key" ] || [ -z "$value" ]; then
+        printf 'Usage: %s config set <%s> <path>\n' "$SELF" "${CONFIG_KEYS// /|}" >&2
+        return 2
+      fi
+      config_key_is_known "$key" || {
+        printf 'Unknown setting: %s (known: %s)\n' "$key" "$CONFIG_KEYS" >&2
+        return 2
+      }
+      config_write "$key" "$value"
+      printf '%s = %s\n' "$key" "$value"
+      ;;
+    unset)
+      config_key_is_known "$key" || {
+        printf 'Unknown setting: %s (known: %s)\n' "$key" "$CONFIG_KEYS" >&2
+        return 2
+      }
+      config_write "$key" ""
+      printf '%s cleared\n' "$key"
+      ;;
+    *)
+      printf 'Unknown config action: %s\n' "$action" >&2
+      usage_for config >&2
+      return 2
+      ;;
+  esac
+}
+
+# --- help --------------------------------------------------------------------
+
+usage() {
+  cat <<EOF
+Android Device Rescue Kit $(version_string)
+
+Usage: $SELF <command> [arguments]
+
+Rescue a phone:
+  probe                      Say immediately whether this computer is authorised
+                             for ADB. Changes nothing on the phone, never waits.
+  photos [destination]       Copy every photo and video, then verify each one
+                             against its size on the phone. Exits non-zero and
+                             names what is missing if a single file failed.
+  data [destination] [opts]  Preserve personal and shared data. Run
+                             '$SELF data --help' for the full option list.
+  log [destination]          Collect diagnostics and build a triage report.
+
+After a backup:
+  verify <backup-root>       Prove the encrypted archive matches the readable
+                             recovery profile.
+  restore <backup-root>      Put selected data back onto a phone. Names the
+                             target device and asks before writing.
+  prompt [capture] [out.md]  Build the analysis prompt from a capture.
+
+Setup:
+  config                     Show where photos, backups and captures are written.
+  update                     Install the latest release of this toolkit.
+  bootstrap                  Install host dependencies and developer hooks.
+  --version                  Print the installed version.
+  help                       This text.
+
+Options, valid with any command:
+  --data-dir <path>          Where photos and backups are written.
+  --work-dir <path>          Where diagnostic captures are written.
+
+Examples:
+  $SELF probe
+  $SELF photos /mnt/rescue/photos
+  $SELF data /mnt/rescue/backup --recovery-profile
+  $SELF verify /mnt/rescue/backup
+  $SELF log /mnt/android-dumps/s22-reboot-loop
+EOF
+}
+
+usage_for() {
+  case "$1" in
+    probe)
+      cat <<EOF
+Usage: $SELF probe
+
+Reports whether the attached phone has authorised this computer for ADB.
+Read-only, immediate, never waits. Exit 0 ready, 2 not usable.
+EOF
+      ;;
+    photos)
+      cat <<EOF
+Usage: $SELF photos [destination]
+
+Finds every photo and video through both MediaStore and a filesystem sweep,
+copies them, then re-measures each copy against the phone. Exit 0 only when
+every discovered file is present at its device size.
+
+With no destination it writes to the data directory; see '$SELF config'.
+EOF
+      ;;
+    log)
+      cat <<EOF
+Usage: $SELF log [destination]
+
+Collects bugreport, logcat buffers, dropbox entries and dumpsys output, then
+writes analysis_report.txt beside them.
+
+With no destination it writes to the work directory; see '$SELF config'.
+EOF
+      ;;
+    verify)
+      cat <<EOF
+Usage: $SELF verify <backup-root>
+
+Checks the encrypted recovery archive against the readable profile written
+next to it. Read-only.
+EOF
+      ;;
+    restore)
+      cat <<EOF
+Usage: $SELF restore <backup-root> [--serial <id>] [--yes]
+
+Writes selected shared-storage folders from a backup back onto a phone.
+
+This is the only command that writes to a device, so it names the target first
+and will not proceed until you confirm. With more than one phone attached it
+stops and lists them: disconnect the others, or name one with --serial.
+--yes skips the prompt and requires --serial.
+EOF
+      ;;
+    prompt)
+      cat <<EOF
+Usage: $SELF prompt [capture-directory] [output-prompt.md]
+
+Builds a model-ready analysis prompt from a capture. With no capture directory
+it uses the most recent one in the work directory.
+EOF
+      ;;
+    config)
+      cat <<EOF
+Usage: $SELF config
+       $SELF config set <data-dir|work-dir> <path>
+       $SELF config unset <data-dir|work-dir>
+
+data-dir holds what you cannot lose: photos, backups, the encrypted recovery
+archive. Point it at a mounted drive to keep rescued data off this computer.
+work-dir holds what you can delete: diagnostic captures and analysis prompts.
+
+Settings are read from, highest first: --data-dir/--work-dir, the environment
+variables ANDROID_RESCUE_DATA_DIR and ANDROID_RESCUE_WORK_DIR, then
+$CONFIG_FILE.
+EOF
+      ;;
+    update)
+      cat <<EOF
+Usage: $SELF update [--check] [--force] [--ref <tag>]
+
+Moves this installation to the latest release and reinstalls anything that
+release newly requires.
+
+  --check   Report the current and latest versions, change nothing.
+  --force   Update a checkout outside the managed install directory.
+  --ref     Move to a specific release tag instead of the latest.
+
+Exit codes: 0 updated or already current, 1 not a git checkout, 2 usage,
+3 development clone, 4 uncommitted changes, 5 remote unreachable, 6 no releases.
+EOF
+      ;;
+    bootstrap)
+      cat <<EOF
+Usage: $SELF bootstrap
+
+Installs host dependencies, the helper repositories and the developer git
+hooks. The installer runs this for you; you need it only in a git clone.
+To move to a newer release, use '$SELF update'.
+EOF
+      ;;
+  esac
+}
+
+# Only tools/android_backup_dialog.sh handles --help itself. Without this,
+# `adrescue photos --help` would treat --help as the destination and create a
+# directory with that name.
+forward_help() {
+  case "${2:-}" in
+    -h|--help|help) usage_for "$1"; return 0 ;;
+  esac
+  return 1
+}
+
+# --- commands ----------------------------------------------------------------
+
+cmd_prompt() {
+  case "${1:-}" in
+    -h|--help|help) usage_for prompt; return 0 ;;
+  esac
+  local capture_dir="${1:-}" output_file="${2:-}" latest="" candidate search_root
+  if [ -z "$capture_dir" ]; then
+    resolve_dir work
+    if [ "$RESOLVED_DIR" = "." ]; then
+      search_root="$ROOT"
+    else
+      search_root="$RESOLVED_DIR"
+    fi
+    for candidate in "$search_root"/captures/*/; do
+      [ -d "$candidate" ] || continue
+      if [ -z "$latest" ] || [ "$candidate" -nt "$latest" ]; then
+        latest="$candidate"
+      fi
+    done
+    capture_dir="$latest"
+  fi
+  if [ -z "$capture_dir" ]; then
+    printf 'No capture directory given, and none found under %s/captures.\n\n' "$search_root" >&2
+    usage_for prompt >&2
+    return 1
+  fi
+  exec "$ROOT/tools/build_analysis_prompt.sh" "$capture_dir" "$output_file"
+}
+
+attached_serials() {
+  adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }'
+}
+
+device_label() {
+  local serial="$1" model release
+  model="$(adb -s "$serial" shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+  release="$(adb -s "$serial" shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')"
+  printf '%s  %s  Android %s' "$serial" "${model:-unknown model}" "${release:-unknown}"
+}
+
+# The one command that writes to a phone. Name the target, show what is about to
+# be written, and make the user type a word rather than hit y.
+cmd_restore() {
+  local serial="" assume_yes=0 source_dir="" count reply entry
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -h|--help|help) usage_for restore; return 0 ;;
+      --serial) serial="${2:-}"; shift 2 || true ;;
+      --yes) assume_yes=1; shift ;;
+      -*) printf 'Unknown option for restore: %s\n' "$1" >&2; usage_for restore >&2; return 2 ;;
+      *)
+        if [ -n "$source_dir" ]; then
+          printf 'restore takes one backup directory.\n' >&2
+          return 2
+        fi
+        source_dir="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$source_dir" ]; then
+    usage_for restore >&2
+    return 2
+  fi
+  if [ ! -d "$source_dir" ]; then
+    printf 'Not a directory: %s\n' "$source_dir" >&2
+    return 2
+  fi
+  if [ "$assume_yes" -eq 1 ] && [ -z "$serial" ]; then
+    printf -- '--yes requires --serial, so an unattended restore names the phone it writes to.\n' >&2
+    return 2
+  fi
+
+  if ! command -v adb >/dev/null 2>&1; then
+    printf 'adb was not found. Run "%s bootstrap" or install platform-tools.\n' "$SELF" >&2
+    return 2
+  fi
+
+  local serials
+  serials="$(attached_serials)"
+  count="$(printf '%s' "$serials" | grep -c . || true)"
+
+  if [ -z "$serial" ]; then
+    if [ "$count" -eq 0 ]; then
+      printf 'No authorised phone is attached. Run "%s probe" to see why.\n' "$SELF" >&2
+      return 2
+    fi
+    if [ "$count" -gt 1 ]; then
+      printf '%s phones are attached. Disconnect all but the one you are restoring to,\n' "$count" >&2
+      printf 'or name it with --serial:\n' >&2
+      while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        printf '  %s\n' "$(device_label "$entry")" >&2
+      done <<<"$serials"
+      return 2
+    fi
+    serial="$serials"
+  else
+    if ! grep -Fxq "$serial" <<<"$serials"; then
+      printf 'No attached phone has serial %s.\n' "$serial" >&2
+      return 2
+    fi
+  fi
+
+  local free_space
+  free_space="$(adb -s "$serial" shell df -h /sdcard 2>/dev/null | tail -1 | awk '{ print $4 }' | tr -d '\r')"
+
+  printf '\nTarget device\n  %s\n' "$(device_label "$serial")"
+  [ -n "$free_space" ] && printf '  free space %s\n' "$free_space"
+  printf '\nRestoring from %s\n' "$source_dir"
+  for entry in "$source_dir"/*/; do
+    [ -d "$entry" ] || continue
+    printf '  %-24s %6s files  %s\n' \
+      "$(basename "$entry")" \
+      "$(find "$entry" -type f 2>/dev/null | wc -l | tr -d ' ')" \
+      "$(du -sh "$entry" 2>/dev/null | cut -f1)"
+  done
+
+  if [ "$assume_yes" -eq 0 ]; then
+    printf '\nThis writes to the phone above. Type restore to continue: '
+    # /dev/tty, so a pipe cannot answer the prompt on the user's behalf.
+    if [ -r /dev/tty ]; then
+      IFS= read -r reply </dev/tty || reply=""
+    else
+      printf '\nNo terminal available to confirm. Use --serial with --yes for an unattended restore.\n' >&2
+      return 2
+    fi
+    if [ "$reply" != "restore" ]; then
+      printf 'Cancelled. Nothing was written.\n' >&2
+      return 1
+    fi
+  fi
+
+  export ANDROID_SERIAL="$serial"
+  export ANDROID_RESCUE_CMD="$SELF restore"
+  exec "$ROOT/tools/android_restore_dialog.sh" "$source_dir"
+}
+
+# --- global options ----------------------------------------------------------
+
+# Pulled out of the argument list wherever they appear, so they work equally in
+# `adrescue --data-dir X photos` and `adrescue photos --data-dir X`.
+ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --data-dir)
+      OPT_DATA_DIR="${2:-}"
+      [ -n "$OPT_DATA_DIR" ] || { printf -- '--data-dir needs a path.\n' >&2; exit 2; }
+      shift 2
+      ;;
+    --work-dir)
+      OPT_WORK_DIR="${2:-}"
+      [ -n "$OPT_WORK_DIR" ] || { printf -- '--work-dir needs a path.\n' >&2; exit 2; }
+      shift 2
+      ;;
+    --data-dir=*) OPT_DATA_DIR="${1#*=}"; shift ;;
+    --work-dir=*) OPT_WORK_DIR="${1#*=}"; shift ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+set -- ${ARGS+"${ARGS[@]}"}
+
+mode="${1:-}"
+[ "$#" -eq 0 ] || shift
+
+case "$mode" in
+  probe)
+    forward_help probe "${1:-}" && exit 0
+    exec "$ROOT/tools/android_device_probe.sh"
+    ;;
+  photos)
+    forward_help photos "${1:-}" && exit 0
+    destination="${1:-$(default_destination data photos)}"
+    mkdir -p "$destination"
+    exec "$ROOT/tools/android_photo_backup.sh" "$destination"
+    ;;
+  log)
+    forward_help log "${1:-}" && exit 0
+    destination="${1:-$(default_destination work captures)}"
+    "$ROOT/tools/collect_android_dumps.sh" "$destination"
+    "$ROOT/tools/analyze_android_capture.sh" "$destination"
+    printf 'Diagnostic capture: %s\n' "$destination"
+    printf 'Triage report: %s/analysis_report.txt\n' "$destination"
+    ;;
+  data)
+    # ${1+"$@"} rather than "$@": on bash 3.2, which is what macOS ships, "$@"
+    # with no positional parameters is an unbound-variable error under `set -u`,
+    # so the documented bare `adrescue data` died before starting.
+    #
+    # export rather than `VAR=x exec ...`: an assignment prefixed to a special
+    # builtin sets the variable without marking it for export, so the tool would
+    # never see it.
+    case "${1:-}" in
+      -h|--help|help) : ;;
+      '') set -- "$(default_destination data backups)" ;;
+    esac
+    export ANDROID_RESCUE_CMD="$SELF data"
+    exec "$ROOT/tools/android_backup_dialog.sh" ${1+"$@"}
+    ;;
+  verify)
+    forward_help verify "${1:-}" && exit 0
+    export ANDROID_RESCUE_CMD="$SELF verify"
+    exec "$ROOT/tools/verify_recovery_archive.sh" ${1+"$@"}
+    ;;
+  restore)
+    cmd_restore ${1+"$@"}
+    ;;
+  prompt)
+    cmd_prompt ${1+"$@"}
+    ;;
+  config)
+    cmd_config ${1+"$@"}
+    ;;
+  update)
+    exec "$ROOT/scripts/self_update.sh" ${1+"$@"}
+    ;;
+  bootstrap|deps)
+    exec "$ROOT/scripts/bootstrap.sh" ${1+"$@"}
+    ;;
+  version|-V|--version)
+    printf 'adrescue %s\n' "$(version_string)"
+    ;;
+  help|-h|--help|'')
+    usage
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$mode" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

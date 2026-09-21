@@ -1,4 +1,30 @@
 #!/usr/bin/env bash
+# SCRIPT: dump.sh
+# DESCRIPTION: Legacy entrypoint for a diagnostic capture.
 set -euo pipefail
 
-exec "$(dirname "$0")/dump" log "$@"
+# Resolve through the symlink chain: ~/.local/bin/<name> points here, and
+# dirname does not follow a symlink. Loop rather than readlink -f, which BSD
+# and macOS readlink do not have.
+__src="${BASH_SOURCE[0]}"
+while [ -L "$__src" ]; do
+  __dir="$(cd -P "$(dirname "$__src")" && pwd)"
+  __src="$(readlink "$__src")"
+  case "$__src" in
+    /*) ;;
+    *) __src="$__dir/$__src" ;;
+  esac
+done
+ROOT="$(cd -P "$(dirname "$__src")" && pwd)"
+
+# Keep the spelling the user typed, so the help text says it back.
+if [ -z "${ANDROID_RESCUE_SELF:-}" ]; then
+  __invoked_dir="$(cd -P "$(dirname "$0")" 2>/dev/null && pwd)" || __invoked_dir=""
+  if [ "$__invoked_dir" = "$ROOT" ]; then
+    ANDROID_RESCUE_SELF="./$(basename -- "$0")"
+  else
+    ANDROID_RESCUE_SELF="$(basename -- "$0")"
+  fi
+  export ANDROID_RESCUE_SELF
+fi
+exec "$ROOT/adrescue" log ${1+"$@"}
