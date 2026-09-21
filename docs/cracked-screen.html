@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Recover an Android phone with a broken or unresponsive screen: external display over USB-C, OTG mouse, and how to enable USB debugging without touching the glass.">
+  <title>Broken screen · Android Device Rescue Kit</title>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="hero" id="top">
+    <nav><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><div><a href="index.html">Home</a><a href="#decide">Which case</a><a href="#display">External display</a><a href="#buy">What to buy</a><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub</a></div></nav>
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">WHEN THE GLASS IS GONE</p>
+        <h1>The screen is broken.<br><span>The data is not.</span></h1>
+        <p class="lede">A phone with a dead display is usually a working computer you have lost the keyboard to. Give it a monitor and a mouse and it behaves like any other machine — including the lock screen, the settings, and the switch this toolkit needs.</p>
+        <p><a class="button" href="#decide">Find your case →</a> <a class="button outline" href="#buy">What to buy</a></p>
+        <p class="quiet">Your own device · Nothing here bypasses a lock · No exploit, no brute force</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <section class="warning">
+      <div><p class="eyebrow">READ THIS FIRST</p><h2>You cannot use ADB to turn on ADB.</h2></div>
+      <p>If USB debugging is switched off, <code>adb</code> cannot reach the phone at all — no typing, no tapping, no screenshots. That is deliberate. If a computer could enable debugging without somebody agreeing on the handset, every stolen phone would be an open book. So the first job is never software: it is <b>getting a working display and pointer in front of the phone</b>, so you can flip that switch yourself.</p>
+    </section>
+
+    <section class="section" id="decide">
+      <p class="eyebrow">THREE QUESTIONS, ONE PATH</p>
+      <h2>Work out which case you are in.</h2>
+      <p class="intro">The answer changes completely depending on what still works. Check these in order — the first "yes" is your route.</p>
+      <div class="cards">
+        <article>
+          <small>CASE A</small>
+          <h3>Debugging is already on</h3>
+          <p>Plug the phone in and run <code>adb devices</code> on the computer. If it prints your serial followed by <code>device</code>, you are done looking — skip to <a href="#already-on">Already on</a>. If it prints <code>unauthorized</code>, the phone is showing a permission dialog you must accept, which needs a display.</p>
+        </article>
+        <article>
+          <small>CASE B</small>
+          <h3>Part of the screen still shows</h3>
+          <p>Cracked but partly lit, or the display works and only touch is dead. A <b>USB-C OTG adapter and any wired mouse</b> gives you a pointer. Cheapest route by far. See <a href="#otg">OTG mouse</a>.</p>
+        </article>
+        <article>
+          <small>CASE C</small>
+          <h3>The display shows nothing at all</h3>
+          <p>Black, shattered beyond reading, or the panel is dead. You need video out of the phone over USB-C to a monitor. See <a href="#display">External display</a>. This is the route that saves a phone nothing else will.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section pale" id="already-on">
+      <p class="eyebrow">CASE A</p>
+      <h2>Debugging already on: drive it from the computer.</h2>
+      <p class="intro">If <code>adb devices</code> reports <code>device</code>, the broken glass stops mattering. You can see the phone and control it entirely from your keyboard.</p>
+      <p>The best tool for this is <b>scrcpy</b>, which mirrors the screen into a window and passes your mouse and keyboard through. It is free, open source, and does this one job well:</p>
+      <div class="command"><code>scrcpy</code></div>
+      <p>Without it, the raw commands do the same thing more slowly:</p>
+      <div class="command"><code>adb exec-out screencap -p &gt; screen.png</code></div>
+      <div class="command"><code>adb shell input text 1234</code></div>
+      <div class="command"><code>adb shell input keyevent 66</code></div>
+      <div class="command"><code>adb shell input tap 540 1200</code></div>
+      <p>Take a screenshot, look at it on the computer, work out where to tap, tap it, screenshot again. Tedious, but it works with no extra hardware. <code>input text</code> types your own passcode; <code>keyevent 66</code> is Enter.</p>
+      <p class="quiet">Nothing here guesses or bypasses a passcode. You supply one you already know, exactly as if you were tapping it in.</p>
+    </section>
+
+    <section class="section" id="display">
+      <p class="eyebrow">CASE C — THE ONE THAT USUALLY WORKS</p>
+      <h2>Give the phone a monitor.</h2>
+      <p class="intro">Many Android phones can output video through their USB-C port. Connect one to a monitor or TV, add a mouse, and the whole phone appears on the big screen — lock screen included. From there you unlock it and enable USB debugging by hand.</p>
+
+      <h3>Will your phone do it?</h3>
+      <p>The feature is <b>DisplayPort Alt Mode</b> over USB-C. It is not universal, and there is no way to check it from a computer while the phone is unreachable — so the honest test is to try the cable.</p>
+      <ul>
+        <li><b>Samsung Galaxy</b> — S8 and newer, Note 8 and newer, every Z Fold and Z Flip, Tab S4 and newer. Samsung calls the desktop interface <b>DeX</b>. Since the S21 a plain USB-C to HDMI cable is enough; older models are happier through a powered hub. Most <b>A-series</b> models do <i>not</i> have it.</li>
+        <li><b>Google Pixel</b> — Pixel 8 and newer output video. Earlier Pixels generally do not.</li>
+        <li><b>Motorola</b> — many recent models, branded <b>Ready For</b>.</li>
+        <li><b>Huawei / Honor</b> — <b>Easy Projection</b> on many models.</li>
+        <li><b>Others</b> — plenty of mid and high-end phones support it without advertising it. Trying costs one cheap cable.</li>
+      </ul>
+
+      <h3>The procedure</h3>
+      <ol class="steps">
+        <li><b>Charge the phone first.</b> Driving a display eats battery, and a hub that passes power through solves this. If you have no powered hub, start above 50%.</li>
+        <li><b>Connect the phone to the monitor.</b> USB-C to HDMI cable straight into the TV or monitor, or a USB-C hub with an HDMI port. Switch the monitor to that input.</li>
+        <li><b>Watch for a picture.</b> On a Samsung, DeX usually starts on its own and the monitor shows a desktop. On other phones you normally get a mirror of the phone screen. If nothing appears after ten seconds, try the other end of the cable, a different HDMI port, and then a different adapter — cheap adapters that only carry charge are common.</li>
+        <li><b>Add a mouse.</b> Plug a wired USB mouse into the hub, or into the phone through a USB-C OTG adapter. A pointer appears. A keyboard is optional but makes typing a passcode far easier.</li>
+        <li><b>Unlock the phone</b> on the big screen with the mouse, or by typing the passcode on the keyboard.</li>
+        <li><b>Enable developer options and USB debugging</b> — the taps are in the next section.</li>
+        <li><b>Connect the phone to your computer</b> and accept the <i>Allow USB debugging?</i> dialog when it appears on the monitor. Tick <b>Always allow from this computer</b>.</li>
+        <li><b>Confirm on the computer:</b></li>
+      </ol>
+      <div class="command"><code>adb devices</code></div>
+      <p>When that prints your serial and <code>device</code>, the phone is reachable and the rest of this toolkit works normally. You can unplug the monitor at that point — <code>scrcpy</code> will show you the screen from now on.</p>
+      <p class="quiet">On a Samsung the monitor may show the DeX desktop rather than the phone's own layout. Both reach Settings; the menus sit in different places. If DeX confuses you, look for a way to switch to <i>Screen mirroring</i> in the DeX notification.</p>
+    </section>
+
+    <section class="section pale" id="otg">
+      <p class="eyebrow">CASE B — THE CHEAP ONE</p>
+      <h2>A mouse, if you can still see something.</h2>
+      <p class="intro">If the display lights up at all — even a cracked corner — a USB mouse may be all you need. Android has supported pointers for years and needs no setup.</p>
+      <ol class="steps">
+        <li>Plug a <b>USB-C OTG adapter</b> into the phone.</li>
+        <li>Plug any <b>wired USB mouse</b> into the adapter. A pointer appears on the phone's own screen within a second or two.</li>
+        <li>Click and drag with the mouse exactly as you would touch. Right-click is Back.</li>
+        <li>Add a keyboard through a hub if you need to type a long passcode.</li>
+      </ol>
+      <p>This does nothing for a completely dark display — you still cannot see where the pointer is. In that case go to <a href="#display">External display</a>.</p>
+      <p class="quiet">Many phones charge and take a mouse at the same time only through a powered hub. A plain OTG adapter occupies the port on its own.</p>
+    </section>
+
+    <section class="section" id="enable">
+      <p class="eyebrow">THE SWITCH ITSELF</p>
+      <h2>Turning on USB debugging.</h2>
+      <p class="intro">Once you can see and click, this is the sequence. Wording varies a little by manufacturer and Android version.</p>
+      <ol class="steps">
+        <li>Open <b>Settings</b>.</li>
+        <li><b>About phone</b>. On a Samsung, then <b>Software information</b>.</li>
+        <li>Tap <b>Build number</b> seven times. A counter appears; keep going until it says developer mode has been turned on.</li>
+        <li>Enter the passcode if asked.</li>
+        <li>Go back to <b>Settings</b>, then <b>Developer options</b> — usually near the bottom, or under <b>System</b>.</li>
+        <li>Turn on <b>USB debugging</b> and confirm the warning.</li>
+        <li>Connect the phone to your computer. A dialog asks <i>Allow USB debugging?</i> — tick <b>Always allow from this computer</b> and accept. That tick is what lets the phone work later without a screen.</li>
+      </ol>
+      <p>While you are there and can still see the screen, consider also turning on <b>Stay awake</b> in Developer options. It keeps the display on while charging, which makes everything afterwards easier. This toolkit sets that same option temporarily during the steps that need you, and puts it back.</p>
+    </section>
+
+    <section class="section pale" id="nope">
+      <p class="eyebrow">SAVE YOURSELF THE TIME</p>
+      <h2>Things that sound like they would work, and do not.</h2>
+      <div class="cards">
+        <article><h3>Find My Device</h3><p>Locates, rings, locks and erases. It cannot unlock a phone or show you its screen.</p></article>
+        <article><h3>Recovery mode</h3><p>Reachable with hardware buttons, but it runs a separate minimal system. It gives no ADB access to your installed Android and no way to enable debugging there.</p></article>
+        <article><h3>Fastboot or Odin</h3><p>Flashing tools. They cannot switch on a setting inside the running system, and unlocking a bootloader wipes the device — destroying exactly what you are trying to recover.</p></article>
+        <article><h3>Wireless casting</h3><p>Miracast, Smart View, Chromecast — all need you to start them from the phone's screen first. Circular, unless it was already set up before the break.</p></article>
+        <article><h3>Wireless ADB</h3><p><code>adb pair</code> over Wi-Fi still requires USB debugging to be on and a pairing code read off the phone's display.</p></article>
+        <article><h3>A screen replacement first</h3><p>Sometimes the right answer — but a shop may reset the device, and a swap can trip anti-theft protection. Pull your data off first if any of these routes work.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="buy">
+      <p class="eyebrow">WHAT TO BUY</p>
+      <h2>Four cheap things, and where to get them.</h2>
+      <p class="intro">Nothing here is specialised or expensive. The links are <b>searches, not individual listings</b> — specific products go out of stock and their pages die, and a dead link in a recovery guide is worse than no link. Every search below lands on the right category in that shop.</p>
+
+      <h3>1 · USB-C hub with HDMI and power — the one to buy if you buy one thing</h3>
+      <p>HDMI out, at least one USB-A socket for the mouse, and pass-through charging so the phone does not flatten itself. Look for <b>4K 30Hz or better</b> and <b>PD</b> or <b>power delivery</b> in the description.</p>
+      <ul>
+        <li><a href="https://www.amazon.com/s?k=usb+c+hub+hdmi+power+delivery">Amazon US</a> · <a href="https://www.amazon.de/s?k=usb+c+hub+hdmi+power+delivery">DE</a> · <a href="https://www.amazon.co.uk/s?k=usb+c+hub+hdmi+power+delivery">UK</a> · <a href="https://www.amazon.fr/s?k=usb+c+hub+hdmi+power+delivery">FR</a> · <a href="https://www.amazon.in/s?k=usb+c+hub+hdmi+power+delivery">IN</a> · <a href="https://www.amazon.com.br/s?k=usb+c+hub+hdmi+power+delivery">BR</a></li>
+        <li><a href="https://www.aliexpress.com/wholesale?SearchText=usb%20c%20hub%20hdmi%20pd">AliExpress</a> · <a href="https://www.walmart.com/search?q=usb%20c%20hub%20hdmi%20power%20delivery">Walmart</a></li>
+        <li>Germany: <a href="https://www.mediamarkt.de/de/search.html?query=usb-c%20hub%20hdmi">MediaMarkt</a> · <a href="https://www.otto.de/suche/usb-c-hub-hdmi/">Otto</a></li>
+        <li>UK: <a href="https://www.currys.co.uk/search?q=usb%20c%20hub%20hdmi">Currys</a> · <a href="https://www.argos.co.uk/search/usb-c-hub-hdmi/">Argos</a></li>
+        <li>France: <a href="https://www.fnac.com/SearchResult/ResultList.aspx?Search=hub%20usb%20c%20hdmi">Fnac</a> · <a href="https://www.darty.com/nav/recherche?text=hub%20usb%20c%20hdmi">Darty</a></li>
+        <li>Russia: <a href="https://www.ozon.ru/search/?text=usb+c+hub+hdmi">Ozon</a> · <a href="https://www.wildberries.ru/catalog/0/search.aspx?search=usb%20c%20hub%20hdmi">Wildberries</a> · <a href="https://www.dns-shop.ru/search/?q=usb-c+hub+hdmi">DNS</a></li>
+        <li>India: <a href="https://www.flipkart.com/search?q=usb%20c%20hub%20hdmi">Flipkart</a></li>
+        <li>Africa: <a href="https://www.jumia.com.ng/catalog/?q=usb+c+hub+hdmi">Jumia</a> · <a href="https://www.takealot.com/all?qsearch=usb%20c%20hub%20hdmi">Takealot</a></li>
+        <li>South America: <a href="https://listado.mercadolibre.com.ar/usb-c-hub-hdmi">MercadoLibre AR</a> · <a href="https://listado.mercadolibre.com.mx/usb-c-hub-hdmi">MX</a> · <a href="https://www.magazineluiza.com.br/busca/hub+usb+c+hdmi/">Magazine Luiza BR</a></li>
+      </ul>
+
+      <h3>2 · USB-C to HDMI cable — simpler, no charging</h3>
+      <p>One cable, phone to monitor. Fine for a short session on a well-charged phone, and the cheapest way to find out whether your phone outputs video at all.</p>
+      <ul>
+        <li><a href="https://www.amazon.com/s?k=usb+c+to+hdmi+cable+4k">Amazon US</a> · <a href="https://www.amazon.de/s?k=usb+c+auf+hdmi+kabel+4k">DE</a> · <a href="https://www.amazon.co.uk/s?k=usb+c+to+hdmi+cable+4k">UK</a> · <a href="https://www.amazon.fr/s?k=cable+usb+c+vers+hdmi+4k">FR</a> · <a href="https://www.amazon.in/s?k=usb+c+to+hdmi+cable+4k">IN</a></li>
+        <li><a href="https://www.aliexpress.com/wholesale?SearchText=usb%20c%20to%20hdmi%20cable%204k">AliExpress</a> · <a href="https://www.walmart.com/search?q=usb%20c%20to%20hdmi%20cable">Walmart</a> · <a href="https://www.flipkart.com/search?q=usb%20c%20to%20hdmi%20cable">Flipkart</a></li>
+        <li><a href="https://www.mediamarkt.de/de/search.html?query=usb-c%20hdmi%20kabel">MediaMarkt DE</a> · <a href="https://www.currys.co.uk/search?q=usb%20c%20to%20hdmi%20cable">Currys UK</a> · <a href="https://www.darty.com/nav/recherche?text=cable%20usb%20c%20hdmi">Darty FR</a> · <a href="https://www.ozon.ru/search/?text=usb+c+hdmi+%D0%BA%D0%B0%D0%B1%D0%B5%D0%BB%D1%8C">Ozon RU</a> · <a href="https://www.jumia.com.ng/catalog/?q=usb+c+to+hdmi+cable">Jumia</a> · <a href="https://listado.mercadolibre.com.ar/cable-usb-c-hdmi">MercadoLibre AR</a></li>
+      </ul>
+
+      <h3>3 · USB-C OTG adapter — for the mouse-only route</h3>
+      <p>A thumb-sized USB-C plug with a USB-A socket. Buy a two-pack; they are trivially cheap and easy to lose.</p>
+      <ul>
+        <li><a href="https://www.amazon.com/s?k=usb+c+otg+adapter">Amazon US</a> · <a href="https://www.amazon.de/s?k=usb+c+otg+adapter">DE</a> · <a href="https://www.amazon.co.uk/s?k=usb+c+otg+adapter">UK</a> · <a href="https://www.amazon.fr/s?k=adaptateur+otg+usb+c">FR</a> · <a href="https://www.amazon.in/s?k=usb+c+otg+adapter">IN</a></li>
+        <li><a href="https://www.aliexpress.com/wholesale?SearchText=usb%20c%20otg%20adapter">AliExpress</a> · <a href="https://www.walmart.com/search?q=usb%20c%20otg%20adapter">Walmart</a> · <a href="https://www.flipkart.com/search?q=otg%20adapter%20type%20c">Flipkart</a> · <a href="https://www.jumia.com.ng/catalog/?q=otg+adapter+type+c">Jumia</a> · <a href="https://www.takealot.com/all?qsearch=usb%20c%20otg">Takealot</a> · <a href="https://www.ozon.ru/search/?text=otg+%D0%BF%D0%B5%D1%80%D0%B5%D1%85%D0%BE%D0%B4%D0%BD%D0%B8%D0%BA+type-c">Ozon RU</a> · <a href="https://listado.mercadolibre.com.ar/adaptador-otg-usb-c">MercadoLibre AR</a></li>
+      </ul>
+
+      <h3>4 · A wired USB mouse, and optionally a keyboard</h3>
+      <p>Any wired mouse works. Wired avoids a pairing dance you cannot see. A cheap wired keyboard makes entering a long passcode much easier.</p>
+      <ul>
+        <li><a href="https://www.amazon.com/s?k=wired+usb+mouse">Amazon US</a> · <a href="https://www.amazon.de/s?k=kabelgebundene+usb+maus">DE</a> · <a href="https://www.amazon.co.uk/s?k=wired+usb+mouse">UK</a> · <a href="https://www.amazon.fr/s?k=souris+usb+filaire">FR</a> · <a href="https://www.amazon.in/s?k=wired+usb+mouse">IN</a></li>
+        <li><a href="https://www.aliexpress.com/wholesale?SearchText=wired%20usb%20mouse">AliExpress</a> · <a href="https://www.walmart.com/search?q=wired%20usb%20mouse">Walmart</a> · <a href="https://www.flipkart.com/search?q=wired%20usb%20mouse">Flipkart</a> · <a href="https://www.jumia.com.ng/catalog/?q=usb+mouse">Jumia</a> · <a href="https://www.takealot.com/all?qsearch=usb%20mouse">Takealot</a> · <a href="https://www.dns-shop.ru/search/?q=%D0%BF%D1%80%D0%BE%D0%B2%D0%BE%D0%B4%D0%BD%D0%B0%D1%8F+%D0%BC%D1%8B%D1%88%D1%8C+usb">DNS RU</a> · <a href="https://listado.mercadolibre.com.ar/mouse-usb-cable">MercadoLibre AR</a></li>
+      </ul>
+
+      <p class="quiet">Shop links are provided for convenience only. Nothing here is sponsored and no affiliate codes are used. Buy wherever you like — the important thing is the category, not the brand.</p>
+    </section>
+
+    <section class="warning">
+      <div><p class="eyebrow">ONCE YOU ARE IN</p><h2>Back up before anything else.</h2></div>
+      <p>A phone reachable over ADB may not stay that way — batteries die, cables fail, and a cracked panel gets worse. Take the data off first, verify it, and only then think about repairs. Start with <code>./dump photos</code>, which copies every photo and video and checks each one against the phone before it reports success.</p>
+    </section>
+
+  </main>
+  <footer><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><span>Local tools for the moment before a reset.</span><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub repository ↗</a></footer>
+</body>
+</html>
