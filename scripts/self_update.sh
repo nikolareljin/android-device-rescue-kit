@@ -173,7 +173,9 @@ else
   git -C "$ROOT" fetch --force "$remote" "refs/tags/$latest:refs/tags/$latest"
 fi
 
-git -C "$ROOT" checkout --detach "refs/tags/$latest"
+# --quiet: git otherwise prints its detached-HEAD lecture on every update,
+# which is noise for someone who only asked for a newer version.
+git -C "$ROOT" checkout --detach --quiet "refs/tags/$latest"
 
 # From the new tree: a release may add a dependency or a launcher.
 if [ -x "$ROOT/scripts/bootstrap.sh" ]; then
