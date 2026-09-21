@@ -60,6 +60,24 @@ pass
 grep -q 'watchdog' "$WORK/chosen-prompt.md" || fail 'the prompt contains the report'
 pass
 
+# The umask used to create the prompt must not reach the analyzer this script
+# shells out to. Left set, analysis_report.txt came out 600 here and 664 when
+# `adrescue log` produced it: the same file with two modes depending on the
+# path taken.
+mkdir -p "$WORK/lazy"
+printf 'ro.serialno=R5CT40EXAMPLE\n' >"$WORK/lazy/getprop.txt"
+bash "$BUILD" "$WORK/lazy" >/dev/null 2>&1
+mkdir -p "$WORK/direct"
+printf 'ro.serialno=R5CT40EXAMPLE\n' >"$WORK/direct/getprop.txt"
+bash "$ROOT/tools/analyze_android_capture.sh" "$WORK/direct" >/dev/null 2>&1
+lazy_mode="$(mode_of "$WORK/lazy/analysis_report.txt")"
+direct_mode="$(mode_of "$WORK/direct/analysis_report.txt")"
+[ "$lazy_mode" = "$direct_mode" ] \
+  || fail "analysis_report.txt mode depends on who wrote it: $lazy_mode vs $direct_mode"
+[ "$(mode_of "$WORK/lazy/analysis_prompt.md")" = 600 ] \
+  || fail 'the prompt is still 600 when the report is generated lazily'
+pass
+
 # A symlink already at the output path would redirect the write somewhere the
 # caller did not choose.
 make_capture "$WORK/cap3"

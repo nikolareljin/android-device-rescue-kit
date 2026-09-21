@@ -22,20 +22,37 @@ fi
 # device serials, carrier and telephony state, Wi-Fi identifiers, the installed
 # app inventory and crash snippets. Create it private before a single byte is
 # written, rather than tightening the mode afterwards and losing the race.
+#
+# The umask is restored immediately. Left set, it would reach the analyzer
+# invoked below, so analysis_report.txt came out 600 when this script generated
+# it and 664 when `adrescue log` did -- the same file, two different modes,
+# depending on the path taken.
+previous_umask="$(umask)"
 umask 077
 
 # A symlink already sitting at the output path would redirect the write
 # somewhere the caller did not choose. Refuse rather than follow it.
 if [ -L "$OUTPUT_FILE" ]; then
+  umask "$previous_umask"
   printf 'Refusing to write through a symlink: %s\n' "$OUTPUT_FILE" >&2
   exit 1
 fi
 
 if ! : >"$OUTPUT_FILE" 2>/dev/null; then
+  umask "$previous_umask"
   printf 'Cannot write the prompt to: %s\n' "$OUTPUT_FILE" >&2
   exit 1
 fi
-chmod 600 "$OUTPUT_FILE"
+
+# An existing file owned by someone else is writable but not chmod-able, and
+# would otherwise stay readable while holding the same data.
+if ! chmod 600 "$OUTPUT_FILE" 2>/dev/null; then
+  umask "$previous_umask"
+  printf 'Cannot restrict permissions on: %s\n' "$OUTPUT_FILE" >&2
+  exit 1
+fi
+
+umask "$previous_umask"
 
 REPORT="$CAPTURE_DIR/analysis_report.txt"
 
