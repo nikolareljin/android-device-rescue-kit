@@ -12,7 +12,9 @@
 
 The repository is designed so public commits contain only tooling and documentation. Device captures are ignored by default because Android bugreports and logs can include personal data.
 
-Current version: `0.3.2`. Versioning rules are documented in [Versioning](docs/versioning.md).
+The current version is in [VERSION](VERSION), the release notes are in
+[CHANGELOG.md](CHANGELOG.md), and the rules for both are in
+[Versioning](docs/versioning.md).
 
 ## Documentation Site
 
@@ -20,7 +22,7 @@ The GitHub Pages site provides a visual quick start, command reference, and reco
 
 ## What It Collects
 
-The collection script uses `adb` to gather:
+`adrescue log` uses `adb` to gather:
 
 - Full Android bugreport
 - `getprop`
@@ -31,35 +33,89 @@ The collection script uses `adb` to gather:
 
 ## Install
 
-Install from Linux or macOS:
+One line, no sudo, on Linux or macOS, or in a WSL terminal on Windows:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash
 ```
 
-For Windows through WSL 2, use the PowerShell one-liner and platform notes in [Installation](docs/installation.md).
+It clones the latest release into `~/.local/share/android-device-rescue-kit`,
+puts one command, `adrescue`, in `~/.local/bin`, and adds that directory to
+your `PATH` if it is not there already. Open a new terminal, then:
+
+```bash
+adrescue --help
+```
+
+Windows and WSL, USB passthrough, choosing where rescued data is written, and
+repairing a broken installation are in [Installation](docs/installation.md).
+
+<details>
+<summary><b>Alternative: run it from a git clone</b> - for contributors, or if you would rather not pipe a script into bash</summary>
+
+```bash
+git clone https://github.com/nikolareljin/android-device-rescue-kit.git
+cd android-device-rescue-kit
+./adrescue bootstrap
+```
+
+Every command in this README then works with `./` in front of it, from inside
+that directory: `./adrescue probe`, `./adrescue photos ~/android-rescue/photos`.
+
+A clone does not update itself. `adrescue update` moves an installed copy to
+the latest release; in a clone you choose the version with git. See
+[Installation](docs/installation.md#upgrading).
+
+</details>
 
 ## Quick Start
 
-Install helper scripts and host dependencies:
+Enable USB debugging on the phone, connect it by USB, and ask whether this
+computer is allowed to talk to it:
 
 ```bash
-./update
+adrescue probe
 ```
 
-Enable USB debugging on the device, connect it, then run:
+`probe` answers immediately and changes nothing on the phone. If it says
+`unauthorized`, accept the *Allow USB debugging?* dialog on the handset. If the
+screen is broken so you cannot accept anything, start with
+[Recovering a phone with a broken screen](https://nikolareljin.github.io/android-device-rescue-kit/cracked-screen.html).
+
+Then pick the job:
 
 ```bash
-./dump log
+adrescue photos ~/android-rescue/photos   # every photo and video, verified
+adrescue data   ~/android-rescue/backup   # the interactive backup checklist
+adrescue log                              # diagnostics for a failing phone
 ```
 
-The script writes to `captures/<timestamp>/`, which is ignored by git.
-
-To analyze a capture:
+To turn a capture into a model-ready analysis prompt:
 
 ```bash
-./prompt captures/<timestamp>
+adrescue prompt captures/<timestamp>
 ```
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `adrescue probe` | Says immediately whether the attached phone has authorised this computer. Never waits, never changes a phone setting. |
+| `adrescue photos <dir>` | Finds and copies every photo and video, then verifies each copy against the phone. Exits non-zero if one is missing. |
+| `adrescue data <dir> [--recovery-profile]` | The interactive backup checklist for shared storage, plus the opt-in recovery profile. |
+| `adrescue log [dir]` | Collects bugreport, logcat, dropbox and dumpsys evidence and writes a triage report. |
+| `adrescue verify <backup-root>` | Checks the encrypted recovery archive against the readable profile. |
+| `adrescue restore <backup-root>` | Puts selected data back onto a phone. Names the target device and asks before writing. |
+| `adrescue prompt [capture-dir]` | Builds `analysis_prompt.md` from a capture. Omitted, it uses the newest one. |
+| `adrescue config` | Shows where photos, backups and captures are written, and how to change it. |
+| `adrescue update` | Moves this installation to the latest release. |
+
+Run `adrescue --help`, or `adrescue <command> --help`, for the full options.
+
+With no destination, `photos` and `data` write under the data directory and
+`log` writes under the work directory. Both default to `~/android-rescue` and
+are settable with `adrescue config set data-dir /mnt/rescue`, so rescued data
+can go straight to an external drive instead of this computer.
 
 The dump command extracts useful files from a bugreport zip when present, searches for common reset causes, and writes a text report into the capture directory. The prompt command creates `analysis_prompt.md` for local or hosted model analysis.
 
@@ -73,7 +129,7 @@ Photos are the thing most people cannot replace, so finding all of them is
 treated as a guarantee rather than a best effort:
 
 ```bash
-./dump photos
+adrescue photos ~/android-rescue/photos
 ```
 
 Every photo and video is discovered twice over -- through Android's MediaStore,
@@ -93,7 +149,7 @@ Thumbnails, caches and trashed files are excluded; the lists live in
 
 ### Credentials and settings
 
-Use `./dump data [destination] --recovery-profile` for an opt-in recovery
+Use `adrescue data <destination> --recovery-profile` for an opt-in recovery
 profile containing available settings, network details, installed-app guidance,
 and owner-exported password-manager data. It never bypasses Android or app
 security controls: passwords come from a file you export on the phone, and the
@@ -104,13 +160,13 @@ readable copy is kept alongside it. Two flags change that:
 
 ```bash
 # Readable only, no archive. For a destination that is already trusted storage.
-./dump data /mnt/backup --recovery-profile --no-encrypt
+adrescue data /mnt/backup --recovery-profile --no-encrypt
 
 # Keep credentials only inside the archive, which is verified to extract first.
-./dump data /mnt/backup --recovery-profile --discard-plaintext
+adrescue data /mnt/backup --recovery-profile --discard-plaintext
 ```
 
-`tools/verify_recovery_archive.sh <backup-root>` compares the archive against
+`adrescue verify <backup-root>` compares the archive against
 the readable tree, file by file and size by size, so "both copies exist" can be
 upgraded to "both copies agree".
 
@@ -120,7 +176,7 @@ upgraded to "both copies agree".
 a machine with no terminal:
 
 ```bash
-./dump data /mnt/backup --non-interactive \
+adrescue data /mnt/backup --non-interactive \
   --select downloads,whatsapp,screenshots,app_inventory,recovery_profile \
   --recovery-profile --no-encrypt \
   --credential-export /sdcard/Download/passwords.csv
@@ -145,8 +201,8 @@ enters a secret or approves a prompt.
 See what the attached phone actually has, then open the one you use:
 
 ```bash
-./dump data --list-managers
-./dump data /mnt/backup --recovery-profile --open-manager com.samsung.android.samsungpass
+adrescue data --list-managers
+adrescue data /mnt/backup --recovery-profile --open-manager com.samsung.android.samsungpass
 ```
 
 Known managers live in `config/recovery_apps.txt` — package, display name, how
@@ -171,7 +227,7 @@ the phone's own screen. **ADB cannot enable ADB** — if a computer could turn i
 on without someone agreeing on the handset, a stolen phone would be an open
 book.
 
-Run `./dump probe` as soon as the cable is connected. It immediately tells you whether this computer is already authorised; it never waits or changes a phone setting. An `unauthorized` result still needs approval on the phone.
+Run `adrescue probe` as soon as the cable is connected. It immediately tells you whether this computer is already authorised; it never waits or changes a phone setting. An `unauthorized` result still needs approval on the phone.
 
 The way through is hardware: give the phone a monitor and a mouse over USB-C,
 unlock it there, and enable debugging by hand. Many phones output video through
@@ -184,11 +240,11 @@ accessibility route when it was already configured, data-preserving temporary
 screen repair, the mouse-only route when part of the display still works, and
 the approaches that sound like they would work but cannot.
 
-## Helper Dependency
+## Helper repositories (contributors)
 
 This repository expects `script-helpers` at `scripts/script-helpers`. Run `scripts/bootstrap_script_helpers.sh` to clone it. The helper repo provides dependency installation, terminal dialog sizing, OS detection, and common logging functions used by the interactive backup and restore scripts.
 
-This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./update` to install both helper repositories, host dependencies, and local git hooks. CI workflows use `ci-helpers` for PR checks, release branch version checks, release tag checks, automatic release tagging, and secret scanning.
+This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./adrescue bootstrap` from a clone to install both helper repositories, host dependencies, and local git hooks. CI workflows use `ci-helpers` for PR checks, release branch version checks, release tag checks, automatic release tagging, and secret scanning.
 
 Both helper repositories track their `production` release ref rather than a pinned commit, so a fresh clone picks up the current release of each.
 

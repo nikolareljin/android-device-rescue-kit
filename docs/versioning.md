@@ -9,7 +9,7 @@ The current version is stored in [VERSION](../VERSION).
 Every behavior, documentation, or script change must update the version before it is merged.
 
 - Patch: bug fixes, wording fixes, small script corrections, capture-list additions that do not change command behavior.
-- Minor: new commands, new workflows, new capture modes, new restore or prompt features.
+- Minor: new commands, new subcommands, renamed or retired command names that still work under their old spelling, new workflows, new capture modes, new restore or prompt features.
 - Major: incompatible command changes, removed workflows, or changed output layout that breaks existing users.
 
 Update both:
@@ -23,7 +23,11 @@ Release branches must be named `release/X.Y.Z`, matching the value in [VERSION](
 
 Tagging is automatic. Merging a `release/X.Y.Z` pull request into `main` runs the `Auto Tag` workflow, which creates the tag `X.Y.Z` on the merge commit.
 
-Tags are unprefixed: `0.3.2`, not `v0.3.2`.
+Tags are unprefixed: `1.2.3`, never `v1.2.3`. That is not cosmetic.
+`adrescue update` finds the latest release by reading this repository's tags
+and ordering them as version numbers, so a tag that does not parse as `X.Y.Z`
+is a release `adrescue update` will never offer, and a stray `v` on one tag
+puts the ordering wrong for every installed copy at once.
 
 Nothing needs to be tagged by hand, and a release branch whose tag already exists is rejected before merge — `check_release_tag.sh` runs on every push to a `release/*` branch and on every pull request, and fails if the tag is taken. A green "tag is available" line in that check means the tag does not exist *yet*; the `Auto Tag` workflow is what creates it on merge.
 
@@ -32,12 +36,14 @@ Versions 0.1.0 through 0.3.0 predate this workflow and remain untagged. `0.3.1` 
 Useful commands:
 
 ```bash
-./scripts/check_release_version.sh --branch release/0.1.0 --repo .
-./scripts/check_release_tag.sh --branch release/0.1.0 --repo . --fetch-tags
-./scripts/version_bump.sh patch
-./scripts/lint.sh
+scripts/check_release_version.sh --branch release/0.1.0 --repo .
+scripts/check_release_tag.sh --branch release/0.1.0 --repo . --fetch-tags
+scripts/version_bump.sh patch
+scripts/lint.sh
 ```
 
-## Current Version
+## Current version
 
-`0.3.2` adds automatic release tagging; `0.3.1` adds visual assets; `0.3.0` adds cross-platform installers; `0.2.0` adds the opt-in recovery profile workflow; `0.1.0` was the first public version of the current codebase.
+The current version is in [VERSION](../VERSION); what changed in each release
+is in [CHANGELOG.md](../CHANGELOG.md). Neither is restated here, because a
+version number copied into prose is a version number that goes stale.

@@ -13,4 +13,10 @@ Assume raw files may contain:
 
 Keep raw captures outside git. This repository ignores common capture paths and file types, but `.gitignore` is only a guardrail. Always check `git status --short` before committing.
 
+That guardrail exists only inside a git clone of this repository. After the
+one-line install, which is the normal case, captures are written under
+`~/android-rescue` or wherever `adrescue config set data-dir` points, and
+nothing there is protected by a `.gitignore`. Treat those directories as
+private storage.
+
 If you need to share an example publicly, create a minimal synthetic fixture or manually redacted excerpt that preserves only the diagnostic pattern.

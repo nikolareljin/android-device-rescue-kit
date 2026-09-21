@@ -17,35 +17,26 @@ For those apps, use their official migration/export feature in addition to this 
 
 ## Backup
 
-Install dependencies:
+Install the toolkit first, see [Installation](installation.md). Then run:
 
 ```bash
-./update
+adrescue data ~/android-rescue/backup
 ```
 
-Run:
-
-```bash
-tools/android_backup_dialog.sh
-```
-
-The script writes to `backups/<timestamp>/`, which is ignored by git.
+With no destination it writes `backups/<timestamp>/` under the data directory,
+which defaults to `~/android-rescue/data`. Run `adrescue config` to see or
+change it; point it at an external drive to keep rescued data off this
+computer.
 
 For WhatsApp, the script preserves consumer and business shared-storage folders when present, including Android media folders, legacy folders, local backup folders, and common exported-chat folders. It still cannot guarantee private chat database preservation from an unrooted phone; use WhatsApp's official transfer or backup flow before wiping.
 
 For Snapchat, the script preserves shared-storage app media and exported media folders when present. It cannot guarantee private chats or unsynced Memories; verify sync/export inside Snapchat before wiping.
 
-The script also lets you choose a custom destination. Use any writable directory visible to the computer running the script, including already mounted external storage or network storage:
+Use any writable directory visible to the computer running the script,
+including already mounted external storage or network storage:
 
 ```bash
-mkdir -p /mnt/android-backups
-tools/android_backup_dialog.sh
-```
-
-You can also pass a destination explicitly:
-
-```bash
-tools/android_backup_dialog.sh /mnt/android-backups/s22-before-reset
+adrescue data /mnt/android-backups/s22-before-reset
 ```
 
 ADB pulls data through the computer, so the destination must be a local filesystem path from the script's point of view, such as `/mnt/...`, `/media/...`, or another mounted path.
@@ -55,8 +46,13 @@ ADB pulls data through the computer, so the destination must be a local filesyst
 On the restored or replacement phone, enable USB debugging and run:
 
 ```bash
-tools/android_restore_dialog.sh backups/<timestamp>
+adrescue restore /mnt/android-backups/s22-before-reset
 ```
+
+Restore is the one command that writes to a phone, so it names the target
+device, shows what is about to be written, and asks you to type `restore`
+before it starts. With more than one phone attached it stops and lists them:
+disconnect the others, or name one with `--serial`.
 
 The restore script pushes selected shared-storage folders back to `/sdcard`. Install and sign in to sensitive apps before expecting their cloud or official transfer mechanisms to finish restoring private content.
 
@@ -65,7 +61,7 @@ The restore script pushes selected shared-storage folders back to `/sdcard`. Ins
 For Android phones only, select **Recovery profile** in the Android Backup checklist, or add `--recovery-profile` to preselect it from the command line:
 
 ```bash
-./dump data /mnt/android-backups/phone-before-reset --recovery-profile
+adrescue data /mnt/android-backups/phone-before-reset --recovery-profile
 ```
 
 The profile collects available network and settings information, an installed-app inventory, and owner-selected password-manager CSV exports. It can open detected recovery apps, but it never enters secrets, defeats device or app protections, or approves export prompts. On rooted phones it can optionally copy only known readable Android Wi-Fi system records; it does not scan app-private databases.
@@ -92,7 +88,7 @@ a dialog was answered.
 Having both is only useful if you can confirm they say the same thing:
 
 ```bash
-tools/verify_recovery_archive.sh <backup-root>
+adrescue verify <backup-root>
 ```
 
 That decrypts the archive and compares its file list and per-file sizes against
