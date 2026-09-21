@@ -148,6 +148,23 @@ For the full dump, preserve, and prompt workflow, see [Usage Guide](docs/usage.m
 
 Backup destinations can be any writable directory visible to the computer running the script.
 
+## Broken Screen, Or USB Debugging Turned Off
+
+Every command in this toolkit needs USB debugging, and that switch is behind
+the phone's own screen. **ADB cannot enable ADB** — if a computer could turn it
+on without someone agreeing on the handset, a stolen phone would be an open
+book.
+
+The way through is hardware: give the phone a monitor and a mouse over USB-C,
+unlock it there, and enable debugging by hand. Many phones output video through
+their USB-C port — Samsung calls the desktop interface DeX — and a cracked or
+entirely dead panel stops mattering once the picture is on a monitor.
+
+**[Recovering a phone with a broken screen](https://nikolareljin.github.io/android-device-rescue-kit/cracked-screen.html)**
+covers the external-display route step by step, the cheaper mouse-only route
+when part of the display still works, what to buy and where, and the approaches
+that sound like they would work but cannot.
+
 ## Helper Dependency
 
 This repository expects `script-helpers` at `scripts/script-helpers`. Run `scripts/bootstrap_script_helpers.sh` to clone it. The helper repo provides dependency installation, terminal dialog sizing, OS detection, and common logging functions used by the interactive backup and restore scripts.
