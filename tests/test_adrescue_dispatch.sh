@@ -129,8 +129,12 @@ expect_ok 'config unset clears' 'data-dir cleared' "$ADRESCUE" config unset data
 # --help must be answered by the dispatcher. Only the backup dialog handles it
 # itself; android_photo_backup.sh would treat --help as the destination and
 # create a directory with that name.
+# Exit 0 is not enough: a subcommand that forwards --help to its tool would
+# also exit 0 while doing the real work. The output has to be usage text.
 for sub in probe photos log verify restore prompt config update bootstrap; do
-  expect_exit "$sub --help exits 0" 0 "$ADRESCUE" "$sub" --help
+  out="$(run "$ADRESCUE" "$sub" --help)" || fail "$sub --help exits 0" "$out"
+  grep -Fq 'Usage:' <<<"$out" || fail "$sub --help must print usage" "$out"
+  pass
 done
 [ -e "$WORK/root/--help" ] && fail 'photos --help created a directory named --help'
 [ -e "./--help" ] && fail 'photos --help created a directory in the test cwd'

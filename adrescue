@@ -558,9 +558,11 @@ case "$mode" in
     cmd_config ${1+"$@"}
     ;;
   update)
+    forward_help update "${1:-}" && exit 0
     exec "$ROOT/scripts/self_update.sh" ${1+"$@"}
     ;;
   bootstrap|deps)
+    forward_help bootstrap "${1:-}" && exit 0
     exec "$ROOT/scripts/bootstrap.sh" ${1+"$@"}
     ;;
   version|-V|--version)
