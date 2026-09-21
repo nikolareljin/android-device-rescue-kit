@@ -22,6 +22,11 @@ notes from it and matches nothing else.
   skipped; one left truncated by a dropped cable is copied again.
 - The device's directory structure is preserved rather than flattened, so
   ~10,000 files cannot collide on their filenames.
+- Everything a backup writes is now gitignored: `shared/` (the pulled photos and
+  documents themselves), `device/`, `app_notes/`, `backup_manifest.txt` and the
+  photo index and report. These were safe only by accident, because the default
+  destination is `backups/` -- but the tool accepts any path, including one
+  inside this repository, which is exactly the case the privacy rule exists for.
 - `photos_index.txt`, `photos_report.txt`, `missing_photos.txt` and `photos/`
   are gitignored. They carry the full device path of every photo -- filenames,
   folder names, app names, dates -- which is personal data under the same rule

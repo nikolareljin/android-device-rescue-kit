@@ -8,6 +8,22 @@ This guide covers the three main workflows:
 
 Raw captures and backups are private. Keep them in ignored directories such as `captures/` and `backups/`, or write them to another mounted destination.
 
+## Unattended runs
+
+Every prompt has a non-interactive equivalent, so the backup can be scripted:
+
+| Flag | Effect |
+|---|---|
+| `--non-interactive` | Never prompt. Requires `--select`. |
+| `--select a,b,c` | Categories to back up. |
+| `--credential-export PATH` | Device path of an exported credential file. Repeatable. |
+| `--no-encrypt` | Write the recovery profile readable, build no archive. |
+| `--keep-plaintext` | Keep the readable copy without asking (the default). |
+| `--discard-plaintext` | Keep credentials only inside the verified archive. |
+
+Unattended defaults are the cautious ones: anything needing a person at the
+phone is skipped rather than assumed.
+
 ## Photos
 
 ```bash

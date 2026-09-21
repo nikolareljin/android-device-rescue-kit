@@ -93,7 +93,43 @@ Thumbnails, caches and trashed files are excluded; the lists live in
 
 ### Credentials and settings
 
-Use `./dump data [destination] --recovery-profile` for an opt-in encrypted recovery profile containing available settings, network details, installed-app guidance, and owner-exported password-manager data. It never bypasses Android or app security controls.
+Use `./dump data [destination] --recovery-profile` for an opt-in recovery
+profile containing available settings, network details, installed-app guidance,
+and owner-exported password-manager data. It never bypasses Android or app
+security controls: passwords come from a file you export on the phone, and the
+tool verifies that file arrived whole rather than extracting anything itself.
+
+By default the profile is encrypted to `recovery-profile.tar.gpg` and the
+readable copy is kept alongside it. Two flags change that:
+
+```bash
+# Readable only, no archive. For a destination that is already trusted storage.
+./dump data /mnt/backup --recovery-profile --no-encrypt
+
+# Keep credentials only inside the archive, which is verified to extract first.
+./dump data /mnt/backup --recovery-profile --discard-plaintext
+```
+
+`tools/verify_recovery_archive.sh <backup-root>` compares the archive against
+the readable tree, file by file and size by size, so "both copies exist" can be
+upgraded to "both copies agree".
+
+### Running unattended
+
+`--non-interactive` runs the whole backup with no prompts, for scripting or for
+a machine with no terminal:
+
+```bash
+./dump data /mnt/backup --non-interactive \
+  --select downloads,whatsapp,screenshots,app_inventory,recovery_profile \
+  --recovery-profile --no-encrypt \
+  --credential-export /sdcard/Download/passwords.csv
+```
+
+`--select` is required in this mode. `--credential-export` is repeatable, since
+a phone usually holds more than one export. Anything that needs a person at the
+handset — collecting root-only Wi-Fi records, opening a password manager to
+complete an export — defaults to *no* when unattended.
 
 For the full dump, preserve, and prompt workflow, see [Usage Guide](docs/usage.md).
 
