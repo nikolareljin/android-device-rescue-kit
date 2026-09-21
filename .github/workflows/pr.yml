@@ -16,6 +16,8 @@ jobs:
       # gate independent of what the runner image happens to ship. scripts/lint.sh
       # fails rather than skips when it is absent, so the check cannot go quiet.
       lint_command: "sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck && ./scripts/lint.sh"
-      test_command: "./prompt --help && ./dump --help && bash tests/run_all.sh"
+      # The legacy spellings stay in the gate: they are the cheapest per-PR proof
+      # that the shims still exit 0 for anyone who installed before adrescue.
+      test_command: "./adrescue --help && ./adrescue --version && ./dump --help && ./dump.sh --help && ./prompt --help && bash tests/run_all.sh"
       check_release_tag: true
       release_branch: ${{ github.head_ref }}
