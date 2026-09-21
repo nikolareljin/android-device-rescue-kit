@@ -30,6 +30,28 @@ getprop.txt
 dumpsys_*.txt
 batterystats*.txt
 *.stderr
+
+# Everything a backup writes.
+#
+# These are only out of harm's way by accident today, because the default
+# destination is backups/. The tool accepts any path, including a relative one
+# inside this repository, and then shared/ holds the pulled photos and
+# documents themselves, device/ holds the app and permission inventory,
+# backup_manifest.txt lists every path taken off the phone, and the photo index
+# lists every image by name and folder. All of it is personal data under the
+# same rule as the captures.
+#
+# The directory names are generic on purpose, since the backup root is
+# arbitrary. If this repository ever needs its own device/ or shared/ directory,
+# un-ignore that one path rather than loosening the rule.
+photos_index.txt
+photos_report.txt
+missing_photos.txt
+photos/
+shared/
+device/
+app_notes/
+backup_manifest.txt
 last_kmsg*
 last_kernel*
 last_all_history*

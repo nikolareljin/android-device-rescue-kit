@@ -24,6 +24,7 @@ The collection script uses `adb` to gather:
 
 - Full Android bugreport
 - `getprop`
+- Every photo and video on the device, verified against the phone after copying
 - `logcat` from all, radio, crash, events, kernel, main, and system buffers where available
 - Dropbox reset/crash entries such as `SYSTEM_LAST_KMSG`, tombstones, watchdogs, and boot records
 - Battery, thermal, telephony, telecom, connectivity, Wi-Fi, activity, package, and disk stats
@@ -66,7 +67,82 @@ For Android dump details and configurable capture targets, see [Android Dumping]
 
 For emergency user-data backup and shared-storage restore workflows, see [Backup And Restore](docs/backup_restore.md).
 
-Use `./dump data [destination] --recovery-profile` for an opt-in encrypted recovery profile containing available settings, network details, installed-app guidance, and owner-exported password-manager data. It never bypasses Android or app security controls.
+### Photos and videos
+
+Photos are the thing most people cannot replace, so finding all of them is
+treated as a guarantee rather than a best effort:
+
+```bash
+./dump photos
+```
+
+Every photo and video is discovered twice over -- through Android's MediaStore,
+which knows the removable card and every app folder, and through a filesystem
+sweep, which catches files copied in over USB that MediaStore has not indexed.
+The two lists are merged into `photos_index.txt`, each file is copied with the
+device's directory structure preserved, and then every copy is re-measured
+against its size on the phone.
+
+The command exits non-zero unless all of them are present and whole. Anything
+missing is listed in `missing_photos.txt` with the reason. An interrupted run
+can simply be repeated: files already copied at the right size are skipped, and
+a file left truncated is copied again.
+
+Thumbnails, caches and trashed files are excluded; the lists live in
+`config/photo_extensions.txt` and `config/photo_exclude_patterns.txt`.
+
+### Credentials and settings
+
+Use `./dump data [destination] --recovery-profile` for an opt-in recovery
+profile containing available settings, network details, installed-app guidance,
+and owner-exported password-manager data. It never bypasses Android or app
+security controls: passwords come from a file you export on the phone, and the
+tool verifies that file arrived whole rather than extracting anything itself.
+
+By default the profile is encrypted to `recovery-profile.tar.gpg` and the
+readable copy is kept alongside it. Two flags change that:
+
+```bash
+# Readable only, no archive. For a destination that is already trusted storage.
+./dump data /mnt/backup --recovery-profile --no-encrypt
+
+# Keep credentials only inside the archive, which is verified to extract first.
+./dump data /mnt/backup --recovery-profile --discard-plaintext
+```
+
+`tools/verify_recovery_archive.sh <backup-root>` compares the archive against
+the readable tree, file by file and size by size, so "both copies exist" can be
+upgraded to "both copies agree".
+
+### Running unattended
+
+`--non-interactive` runs the whole backup with no prompts, for scripting or for
+a machine with no terminal:
+
+```bash
+./dump data /mnt/backup --non-interactive \
+  --select downloads,whatsapp,screenshots,app_inventory,recovery_profile \
+  --recovery-profile --no-encrypt \
+  --credential-export /sdcard/Download/passwords.csv
+```
+
+See what the attached phone actually has, then open the one you use:
+
+```bash
+./dump data --list-managers
+./dump data /mnt/backup --recovery-profile --open-manager com.samsung.android.samsungpass
+```
+
+Known managers live in `config/recovery_apps.txt` — package, display name, how
+its export is reached, and optionally how to open it. Adding a line is all it
+takes to support another one. Samsung Pass has no launcher icon of its own, so
+its line names the Settings screen it lives behind; an app with neither a
+launcher nor a launch spec is reported as such rather than retried.
+
+`--select` is required in this mode. `--credential-export` is repeatable, since
+a phone usually holds more than one export. Anything that needs a person at the
+handset — collecting root-only Wi-Fi records, opening a password manager to
+complete an export — defaults to *no* when unattended.
 
 For the full dump, preserve, and prompt workflow, see [Usage Guide](docs/usage.md).
 

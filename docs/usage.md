@@ -8,6 +8,36 @@ This guide covers the three main workflows:
 
 Raw captures and backups are private. Keep them in ignored directories such as `captures/` and `backups/`, or write them to another mounted destination.
 
+## Unattended runs
+
+Every prompt has a non-interactive equivalent, so the backup can be scripted:
+
+| Flag | Effect |
+|---|---|
+| `--non-interactive` | Never prompt. Requires `--select`. |
+| `--select a,b,c` | Categories to back up. |
+| `--credential-export PATH` | Device path of an exported credential file. Repeatable. |
+| `--open-manager PKG` | Open this password manager so its own export can be run. Repeatable. |
+| `--list-managers` | Print the managers installed on the attached phone and exit. |
+| `--no-encrypt` | Write the recovery profile readable, build no archive. |
+| `--keep-plaintext` | Keep the readable copy without asking (the default). |
+| `--discard-plaintext` | Keep credentials only inside the verified archive. |
+
+Unattended defaults are the cautious ones: anything needing a person at the
+phone is skipped rather than assumed.
+
+## Photos
+
+```bash
+./dump photos [destination]
+```
+
+Finds every photo and video through MediaStore and a filesystem sweep, copies
+them preserving the device's directory layout, and verifies each one against
+its size on the phone. Exits non-zero and writes `missing_photos.txt` if any
+file could not be copied. Re-running resumes: whole files are skipped,
+truncated ones are copied again.
+
 ## 1. Dump Device Information
 
 Install host dependencies:

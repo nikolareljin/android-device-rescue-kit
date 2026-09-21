@@ -11,13 +11,99 @@ MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
 MESSAGE_WIDTH=$((DIALOG_WIDTH < 74 ? DIALOG_WIDTH : 74))
 LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
 
+# --- ui layer --------------------------------------------------------------
+#
+# Every prompt goes through these. In interactive mode they are dialog; with
+# --non-interactive they return the supplied default without drawing anything.
+# The point is that the two modes execute the same surrounding code, so a bug
+# fixed in one is fixed in both.
+
+ui_msg() {
+  local title="$1" text="$2"
+  if [ "$INTERACTIVE" -eq 1 ]; then
+    dialog --title "$title" --msgbox "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  else
+    printf '[%s] %s\n' "$title" "$(printf '%b' "$text" | tr '\n' ' ')" >&2
+  fi
+}
+
+# ui_yesno <title> <text> <default: yes|no>
+ui_yesno() {
+  local title="$1" text="$2" default="$3"
+  if [ "$INTERACTIVE" -eq 0 ]; then
+    [ "$default" = "yes" ]
+    return $?
+  fi
+  if [ "$default" = "no" ]; then
+    dialog --defaultno --title "$title" --yesno "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  else
+    dialog --title "$title" --yesno "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  fi
+}
+
+
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RECOVERY_PROFILE=0
+# Keep the readable profile alongside the encrypted archive.
+#
+# Default is 1: the plaintext profile is kept unless the owner says otherwise.
+# --keep-plaintext removes the question entirely, which is what makes a test run
+# deterministic -- both artifacts are guaranteed to exist without depending on
+# how a dialog was answered.
+KEEP_PLAINTEXT=1
+NO_PROMPT_PLAINTEXT=0
+# Encryption is on by default. --no-encrypt produces a readable profile and no
+# archive, for the case where the destination is already trusted storage and the
+# owner needs to read the files directly.
+ENCRYPT_PROFILE=1
+# Interactive by default. Non-interactive exists so the flow can be scripted and
+# tested; both modes go through the same ui_* helpers below, so there is one code
+# path rather than two that drift.
+INTERACTIVE=1
+SELECTION=""
+CREDENTIAL_EXPORTS=()
+# Packages to open for an owner-run export. Empty means ask (interactive) or
+# open nothing (unattended).
+OPEN_MANAGERS=()
+LIST_MANAGERS=0
 BACKUP_DESTINATION=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --recovery-profile) RECOVERY_PROFILE=1 ;;
-    -h|--help) printf "Usage: %s [destination] [--recovery-profile]\n" "$0"; exit 0 ;;
+    --keep-plaintext) KEEP_PLAINTEXT=1; NO_PROMPT_PLAINTEXT=1 ;;
+    --discard-plaintext) KEEP_PLAINTEXT=0; NO_PROMPT_PLAINTEXT=1 ;;
+    --no-encrypt) ENCRYPT_PROFILE=0 ;;
+    --non-interactive) INTERACTIVE=0 ;;
+    --select) SELECTION="${2:-}"; shift ;;
+    --credential-export) CREDENTIAL_EXPORTS+=("${2:-}"); shift ;;
+    --open-manager) OPEN_MANAGERS+=("${2:-}"); shift ;;
+    --list-managers) LIST_MANAGERS=1 ;;
+    -h|--help)
+      # Name the command the user actually types, not this script's path.
+      cat <<USAGE
+Usage: ${ANDROID_RESCUE_CMD:-./dump data} [destination] [options]
+
+  --recovery-profile          Collect settings, networks, app guidance and
+                              owner-exported credentials.
+  --no-encrypt                Do not build the encrypted archive. The profile is
+                              written readable and stays that way.
+  --keep-plaintext            Keep the readable copy without asking (default).
+  --discard-plaintext         Keep credentials only inside the verified archive.
+  --non-interactive           Ask nothing. Requires --select; uses --credential-export
+                              for credential files and accepts defaults elsewhere.
+  --select a,b,c              What to back up. Any of:
+                              photos, downloads, whatsapp, snapchat, screenshots,
+                              music, app_inventory, recovery_profile, adb_backup
+  --credential-export PATH    Device path of an exported credential file.
+                              Repeatable. Implies no prompting for them.
+  --open-manager PACKAGE      Open this password manager on the phone so its own
+                              export can be run. Repeatable. Without it the
+                              interactive run offers a list and an unattended one
+                              opens nothing.
+  --list-managers             Print the managers installed on the attached phone
+                              and exit.
+USAGE
+      exit 0 ;;
     --*) print_error "Unknown option: $1"; exit 1 ;;
     *) [ -z "$BACKUP_DESTINATION" ] || { print_error "Only one backup destination may be supplied."; exit 1; }; BACKUP_DESTINATION="$1" ;;
   esac
@@ -26,6 +112,32 @@ done
 RECOVERY_PROFILE_DEFAULT="off"
 if [ "$RECOVERY_PROFILE" -eq 1 ]; then
   RECOVERY_PROFILE_DEFAULT="on"
+fi
+
+# --list-managers: what is actually installed, so --open-manager has something
+# real to name. Queries the phone directly rather than a captured profile,
+# because it runs before any backup.
+if [ "$LIST_MANAGERS" -eq 1 ]; then
+  RECOVERY_APPS_FILE="${RECOVERY_APPS_FILE:-$ANDROID_RESCUE_ROOT/config/recovery_apps.txt}"
+  installed="$(adb shell cmd package list packages 2>/dev/null | tr -d '\r')"
+  if [ -z "$installed" ]; then
+    print_error "No device, or the package list could not be read."
+    exit 1
+  fi
+  found=0
+  printf 'Password managers and authenticators on this device:\n\n'
+  while IFS='|' read -r pkg name hint; do
+    case "$pkg" in ''|\#*) continue ;; esac
+    printf '%s\n' "$installed" | grep -Fxq "package:$pkg" || continue
+    found=$((found + 1))
+    printf '  %s\n      %s\n      %s\n\n' "$name" "$pkg" "$hint"
+  done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$RECOVERY_APPS_FILE" 2>/dev/null)
+  if [ "$found" -eq 0 ]; then
+    printf '  none recognised. config/recovery_apps.txt lists what is known.\n'
+  else
+    printf 'Open one with:  --open-manager <package>\n'
+  fi
+  exit 0
 fi
 
 select_backup_root() {
@@ -78,7 +190,7 @@ MANIFEST="$BACKUP_ROOT/backup_manifest.txt"
 # finished with "Backup Complete" -- and the phone then got wiped.
 if ! mkdir -p "$BACKUP_ROOT/shared" "$BACKUP_ROOT/device" 2>/dev/null; then
   print_error "Cannot create backup directories under: $BACKUP_ROOT"
-  dialog --title "Backup Destination Unusable" --msgbox "Cannot write to:\n$BACKUP_ROOT\n\nCheck the path is mounted and writable, then run the backup again. Nothing has been backed up." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+  ui_msg "Backup Destination Unusable" "Cannot write to:\n$BACKUP_ROOT\n\nCheck the path is mounted and writable, then run the backup again. Nothing has been backed up."
   exit 1
 fi
 if ! : >>"$MANIFEST" 2>/dev/null; then
@@ -184,11 +296,102 @@ backup_snapchat() {
     "If you downloaded a Snapchat My Data archive to Downloads, also select Downloads in this backup workflow."
 }
 
+# Offer the detected managers and open the chosen ones, one at a time, so the
+# owner can run each app's own export.
+#
+# Nothing is opened unless it was asked for: --open-manager names a package
+# when unattended, and the interactive path shows a checklist of what is
+# actually installed rather than assuming.
+# Open one detected app, by whichever route it actually has.
+#
+# `monkey -p` only works for an app with a LAUNCHER activity. Samsung Pass has
+# none -- it is reached through Settings -- so on the first phone this was run
+# against, monkey failed and the tool reported "could not open" for an app that
+# was never openable that way. An app with no launcher gets its configured
+# launch spec, and one with neither is said so plainly rather than retried.
+launch_app() {
+  local i="$1"
+  local pkg="${DETECTED_APPS[$i]}" name="${DETECTED_NAMES[$i]}" launch="${DETECTED_LAUNCH[$i]}"
+
+  if [ -n "$launch" ]; then
+    # shellcheck disable=SC2086  # the spec is a word list from config
+    if adb shell am start $launch >/dev/null 2>&1; then
+      log_manifest "OPENED $pkg via $launch"
+      return 0
+    fi
+    print_warning "Could not open $name; follow the steps in recovery_actions.txt."
+    log_manifest "FAILED to open $pkg via $launch"
+    return 1
+  fi
+
+  if ! adb shell "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $pkg" 2>/dev/null | tr -d '\r' | grep -q "^$pkg/"; then
+    print_warning "$name has no launcher screen; follow the steps in recovery_actions.txt."
+    log_manifest "NOT LAUNCHABLE $pkg (no launcher activity, no launch spec)"
+    return 1
+  fi
+
+  if adb shell monkey -p "$pkg" 1 >/dev/null 2>&1; then
+    log_manifest "OPENED $pkg for owner export"
+    return 0
+  fi
+  print_warning "Could not open $name; follow the steps in recovery_actions.txt."
+  log_manifest "FAILED to open $pkg"
+  return 1
+}
+
+open_recovery_apps() {
+  [ "${#DETECTED_APPS[@]}" -gt 0 ] || {
+    log_manifest "SKIPPED opening recovery apps: none detected"
+    return 0
+  }
+
+  local chosen=() i pkg name
+
+  if [ "${#OPEN_MANAGERS[@]}" -gt 0 ]; then
+    for pkg in "${OPEN_MANAGERS[@]}"; do
+      local found=0
+      for i in "${!DETECTED_APPS[@]}"; do
+        [ "${DETECTED_APPS[$i]}" = "$pkg" ] && { chosen+=("$i"); found=1; break; }
+      done
+      [ "$found" -eq 1 ] || print_warning "--open-manager $pkg is not installed on this device; skipping."
+    done
+  elif [ "$INTERACTIVE" -eq 0 ]; then
+    log_manifest "SKIPPED opening recovery apps: unattended and no --open-manager given"
+    return 0
+  else
+    local args=()
+    for i in "${!DETECTED_APPS[@]}"; do
+      args+=("$i" "${DETECTED_NAMES[$i]}" off)
+    done
+    local picked
+    picked=$(dialog --stdout --separate-output \
+      --title "Open A Password Manager" \
+      --checklist "Choose which to open on the phone so you can run its own export. Nothing is opened unless you pick it, and this tool never enters a secret or approves a prompt." \
+      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" "${args[@]}") || picked=""
+    for i in $picked; do chosen+=("$i"); done
+  fi
+
+  if [ "${#chosen[@]}" -eq 0 ]; then
+    log_manifest "SKIPPED opening recovery apps: none selected"
+    return 0
+  fi
+
+  for i in "${chosen[@]}"; do
+    pkg="${DETECTED_APPS[$i]}"
+    name="${DETECTED_NAMES[$i]}"
+    launch_app "$i" || true
+    ui_msg "$name" "Complete the export in $name on the phone, then return here.\n\n${DETECTED_HINTS[$i]}\n\nThis tool will not enter secrets or approve prompts."
+  done
+}
+
 collect_recovery_profile() {
   local profile_root="$BACKUP_ROOT/recovery_profile" export_path imported_path passphrase confirmation
   mkdir -p "$profile_root/imports" "$profile_root/root_system"
   chmod 700 "$profile_root" "$profile_root/imports" "$profile_root/root_system"
-  dialog --defaultno --title "Recovery Profile Consent" --yesno "This optional profile may contain passwords, network details, settings, and app inventory. Continue only for a phone you own or are authorized to recover." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" || { log_manifest "SKIPPED recovery profile: consent declined"; return 0; }
+  # Non-interactive defaults to yes: asking for --recovery-profile on the
+  # command line is the consent.
+  ui_yesno "Recovery Profile Consent" "This optional profile may contain passwords, network details, settings, and app inventory. Continue only for a phone you own or are authorized to recover." yes \
+    || { log_manifest "SKIPPED recovery profile: consent declined"; return 0; }
   if ! require_tool gpg; then
     log_manifest "SKIPPED recovery profile: gpg unavailable"
     return 1
@@ -214,19 +417,38 @@ collect_recovery_profile() {
   capture_text recovery_profile/apps.txt adb shell cmd package list packages
   mv "$BACKUP_ROOT/device/recovery_profile/"* "$profile_root/"
   find "$profile_root" -maxdepth 1 -type f -exec chmod 600 {} +
-  printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
-  # adb commonly allocates a PTY and returns CRLF, so `grep -Fx "package:x"`
-  # never matched "package:x\r" and the guidance below was silently skipped.
+  printf "%s\n" "Android recovery actions" "" "Use each provider's own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
+  # Some adb and device combinations allocate a PTY and return CRLF, which a
+  # `grep -Fx "package:x"` would never match. Stripping CR costs nothing and
+  # removes the difference between those devices and the rest.
   has_package() { tr -d '\r' < "$profile_root/apps.txt" | grep -Fxq "package:$1"; }
-  if has_package com.android.chrome; then
-    printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
+
+  # The known managers come from config/recovery_apps.txt rather than being
+  # written out here. They used to be a hardcoded list repeated three times,
+  # which is why Samsung Pass -- installed on the first phone this was run
+  # against -- was missing from all three.
+  RECOVERY_APPS_FILE="${RECOVERY_APPS_FILE:-$ANDROID_RESCUE_ROOT/config/recovery_apps.txt}"
+  DETECTED_APPS=()
+  DETECTED_NAMES=()
+  DETECTED_HINTS=()
+  DETECTED_LAUNCH=()
+  while IFS='|' read -r pkg name hint launch; do
+    case "$pkg" in ''|\#*) continue ;; esac
+    has_package "$pkg" || continue
+    DETECTED_APPS+=("$pkg")
+    DETECTED_NAMES+=("$name")
+    DETECTED_HINTS+=("$hint")
+    DETECTED_LAUNCH+=("${launch:-}")
+    printf '%s\n  %s\n' "$name ($pkg)" "$hint" >>"$profile_root/recovery_actions.txt"
+  done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$RECOVERY_APPS_FILE" 2>/dev/null)
+
+  if [ "${#DETECTED_APPS[@]}" -eq 0 ]; then
+    printf '%s\n' "No known password manager or authenticator was detected on this device." >>"$profile_root/recovery_actions.txt"
   fi
-  for app in com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-    if has_package "$app"; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
-  done
+  log_manifest "Recovery apps detected: ${#DETECTED_APPS[@]}"
   chmod 600 "$profile_root/recovery_actions.txt"
   if adb shell "su -c id" >/dev/null 2>&1; then
-    dialog --defaultno --title "Root-only System Sources" --yesno "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
+    ui_yesno "Root-only System Sources" "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." no && {
       for source_path in /data/misc/apexdata/com.android.wifi/WifiConfigStore.xml /data/misc/wifi/WifiConfigStore.xml; do
         case "$source_path" in
           /data/misc/apexdata/*) target_path="$profile_root/root_system/WifiConfigStore.apex.xml" ;;
@@ -238,24 +460,104 @@ collect_recovery_profile() {
   else
     log_manifest "SKIPPED root-only system sources: root unavailable"
   fi
-  dialog --defaultno --title "Open Recovery Apps" --yesno "Open detected recovery apps for owner-approved export or transfer? The tool will never enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" && {
-    for app in com.android.chrome com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-      if grep -Fx "package:$app" "$profile_root/apps.txt" >/dev/null 2>&1; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; dialog --title "Recovery action" --msgbox "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; fi
-    done
-  }
-  export_path=$(dialog --stdout --title "Credential Export" --inputbox "Enter the exact phone path of an owner-exported password CSV, or leave empty to skip. Example: /sdcard/Download/passwords.csv" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "/sdcard/Download/passwords.csv") || export_path=""
-  if [ -n "$export_path" ] && adb_shell_exists "$export_path"; then
-    imported_path="$profile_root/imports/$(basename "$export_path")"
-    if adb pull -a "$export_path" "$imported_path"; then
-      chmod 600 "$imported_path"
-      if cp "$imported_path" "$profile_root/credentials.txt"; then
-        chmod 600 "$profile_root/credentials.txt"
-        log_manifest "OK owner-exported credentials $export_path"
-      else
-        log_manifest "FAILED credential copy $export_path"
-      fi
-    else log_manifest "FAILED credential export $export_path"; fi
-  elif [ -n "$export_path" ]; then log_manifest "MISSING credential export $export_path"; fi
+  # Defaults to no unattended: this drives the phone's UI and expects someone
+  # standing at it to complete an export.
+  # Which manager to open is a choice, not a sweep. A phone commonly has both
+  # Chrome and Samsung Pass, and opening every detected app in turn means
+  # sitting through prompts for ones the owner does not use.
+  open_recovery_apps
+  # Several exports, not one.
+  #
+  # A phone routinely has more than one: the browser's passwords, a password
+  # manager's vault, an authenticator's seeds. The previous single prompt kept
+  # whichever was typed and there was no way to add a second. It also copied the
+  # file to credentials.txt, leaving the same secret in plaintext twice; the
+  # import under imports/ is now the only readable copy.
+  #
+  # Format is deliberately not checked. Managers export csv, json, 1pux and
+  # kdbx, so requiring a CSV would reject valid vaults. What is checked is that
+  # the file arrived whole.
+  mkdir -p "$profile_root/imports"
+  credential_count=0
+  # Prefill the example path on the first prompt only; an already-imported path
+  # offered again just invites a duplicate.
+  credential_prefill="/sdcard/Download/passwords.csv"
+  # Paths given on the command line are used verbatim and nothing is asked. This
+  # is also the only way to supply them when running unattended.
+  local supplied_idx=0 supplied_total=${#CREDENTIAL_EXPORTS[@]}
+  while :; do
+    if [ "$supplied_total" -gt 0 ]; then
+      if [ "$supplied_idx" -ge "$supplied_total" ]; then break; fi
+      export_path="${CREDENTIAL_EXPORTS[$supplied_idx]}"
+      supplied_idx=$((supplied_idx + 1))
+    elif [ "$INTERACTIVE" -eq 0 ]; then
+      break
+    else
+      export_path=$(dialog --stdout --title "Credential Export ($credential_count imported)" --inputbox "Exact phone path of an owner-exported password file (csv, json, 1pux, kdbx).\n\nLeave empty and press OK when there are no more." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "$credential_prefill") || export_path=""
+    fi
+    credential_prefill=""
+    [ -n "$export_path" ] || break
+
+    if ! adb_shell_exists "$export_path"; then
+      log_manifest "MISSING credential export $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      ui_msg "Not Found" "No file at:\n$export_path\n\nCheck the path on the phone and try again."
+      continue
+    fi
+
+    import_name="$(basename "$export_path")"
+    # Two managers both exporting "passwords.csv" must not overwrite each other.
+    if [ -e "$profile_root/imports/$import_name" ]; then
+      import_name="$(date +%s)-$import_name"
+    fi
+    imported_path="$profile_root/imports/$import_name"
+
+    if ! adb pull -a "$export_path" "$imported_path" >/dev/null 2>&1; then
+      log_manifest "FAILED credential export $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      continue
+    fi
+    chmod 600 "$imported_path"
+
+    # An empty or short file here is the dangerous case: it looks imported, and
+    # the user is later invited to delete the phone's copy.
+    local_size=$(wc -c <"$imported_path" 2>/dev/null | tr -d ' ')
+    device_size=$(adb shell "stat -c %s '$export_path' 2>/dev/null || wc -c <'$export_path'" 2>/dev/null | tr -dc '0-9')
+    if [ -z "$local_size" ] || [ "$local_size" -eq 0 ]; then
+      log_manifest "FAILED credential export empty after copy $export_path"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      rm -f "$imported_path"
+      ui_msg "Empty File" "$export_path copied as 0 bytes and was discarded.\n\nRe-export it on the phone, then add it again."
+      continue
+    fi
+    if [ -n "$device_size" ] && [ "$device_size" -ne "$local_size" ]; then
+      log_manifest "FAILED credential export size mismatch $export_path (device=$device_size local=$local_size)"
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      rm -f "$imported_path"
+      ui_msg "Incomplete Copy" "$export_path copied incompletely and was discarded.\n\nReconnect the phone and add it again."
+      continue
+    fi
+
+    credential_count=$((credential_count + 1))
+    log_manifest "OK owner-exported credentials $export_path -> imports/$import_name ($local_size bytes)"
+    printf '%s\t%s\t%s bytes\n' "$import_name" "$export_path" "$local_size" >>"$profile_root/credential_exports.txt"
+  done
+  if [ "$credential_count" -gt 0 ]; then
+    chmod 600 "$profile_root/credential_exports.txt"
+  fi
+  log_manifest "Credential exports imported: $credential_count"
+  if [ "$ENCRYPT_PROFILE" -eq 0 ]; then
+    # No archive by request. The readable profile is the deliverable, so say
+    # exactly where it is and that nothing encrypted was produced.
+    log_manifest "SKIPPED recovery profile encryption (--no-encrypt)"
+    log_manifest "PLAINTEXT profile at $profile_root"
+    if [ "$credential_count" -gt 0 ]; then
+      log_manifest "RETAINED $credential_count readable credential export(s) under $profile_root/imports/"
+    fi
+    print_warning "Recovery profile written UNENCRYPTED to $profile_root"
+    return 0
+  fi
+
   passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption"; return 1; }
   confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption confirmation"; return 1; }
   if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
@@ -278,14 +580,23 @@ collect_recovery_profile() {
   else
     log_manifest "FAILED recovery profile encryption (tar=${pipe_status[0]} gpg=${pipe_status[1]})"
   fi
-  if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; else log_manifest "FAILED recovery profile encryption"; dialog --title "Recovery Profile Encryption Failed" --msgbox "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; return 1; fi
+  if [ "$archive_ok" -eq 1 ]; then chmod 600 "$BACKUP_ROOT/recovery-profile.tar.gpg"; log_manifest "OK recovery-profile.tar.gpg verified"; log_manifest "PLAINTEXT profile retained at $profile_root"; else log_manifest "FAILED recovery profile encryption"; ui_msg "Recovery Profile Encryption Failed" "The encrypted archive was not created. The recovery profile remains at:\n$profile_root\n\nMove it to secure storage or retry the backup before wiping the phone."; return 1; fi
   unset passphrase confirmation
-  if [ -f "$profile_root/credentials.txt" ]; then
-    if dialog --defaultno --title "Retain Plaintext Credentials?" --yesno "A readable credentials.txt is highly sensitive. Keep it beside the encrypted archive? Choose No to retain it only in the encrypted archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
-      log_manifest "RETAINED plaintext credentials by owner confirmation"
+  if [ "$credential_count" -gt 0 ]; then
+    keep_them=0
+    if [ "$NO_PROMPT_PLAINTEXT" -eq 1 ]; then
+      # Decided on the command line; asking again would only invite a mistake.
+      [ "$KEEP_PLAINTEXT" -eq 1 ] && keep_them=1
+    elif dialog --title "Retain Plaintext Credentials?" --yesno "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive?\n\nYes keeps both copies. No keeps them only inside the archive, which has already been verified to extract." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
+      keep_them=1
+    fi
+    if [ "$keep_them" -eq 1 ]; then
+      log_manifest "RETAINED $credential_count plaintext credential export(s)"
     else
-      rm -f "$profile_root/credentials.txt" "$profile_root"/imports/*
-      log_manifest "REMOVED plaintext credential files after encryption"
+      # Only reached when the archive verified, so this cannot be the last copy.
+      rm -f "$profile_root"/imports/* "$profile_root/credential_exports.txt"
+      rmdir "$profile_root/imports" 2>/dev/null || true
+      log_manifest "REMOVED $credential_count plaintext credential export(s) after verified encryption"
     fi
   fi
 }
@@ -301,11 +612,18 @@ Destination: $BACKUP_ROOT
 
 EOF
 
+if [ "$INTERACTIVE" -eq 0 ]; then
+  if [ -z "$SELECTION" ]; then
+    print_error "--non-interactive requires --select (see --help)."
+    exit 2
+  fi
+  CHOICES="$(printf '%s' "$SELECTION" | tr ',' '\n')"
+else
 CHOICES=$(dialog --stdout --separate-output \
   --title "Android Backup" \
   --checklist "Select data to preserve. Private app databases usually require the app's official transfer feature." \
   "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" \
-  photos "Camera photos and videos: DCIM, Pictures, Movies" on \
+  photos "Every photo and video on the device, found and verified" on \
   downloads "Downloads and documents from shared storage" on \
   whatsapp "WhatsApp visible media and local shared backup folders" on \
   snapchat "Snapchat exported/shared media folders" on \
@@ -319,6 +637,7 @@ if [ $? -ne 0 ]; then
   printf 'Backup cancelled.\n'
   exit 1
 fi
+fi
 
 # Reset before reading the checklist. The --recovery-profile flag sets this to
 # 1 up front so the box starts checked; without clearing it here, unchecking
@@ -329,9 +648,16 @@ RECOVERY_PROFILE=0
 for choice in $CHOICES; do
   case "$choice" in
     photos)
-      pull_path /sdcard/DCIM DCIM
-      pull_path /sdcard/Pictures Pictures
-      pull_path /sdcard/Movies Movies
+      # Discovery, not a path list. DCIM/Pictures/Movies misses the removable
+      # card, vendor gallery folders, received app media and any folder the
+      # owner made themselves. android_photo_backup.sh enumerates through
+      # MediaStore and a filesystem sweep, then verifies every file it claims.
+      if "$SCRIPT_DIR/android_photo_backup.sh" "$BACKUP_ROOT"; then
+        log_manifest "OK photos verified (see photos_report.txt)"
+      else
+        log_manifest "FAILED photos incomplete (see missing_photos.txt)"
+        BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      fi
       ;;
     downloads)
       pull_path /sdcard/Download Download
@@ -391,10 +717,26 @@ Manual app actions still recommended:
 EOF
 
 if [ "$BACKUP_FAILURES" -gt 0 ]; then
-  dialog --title "Backup Incomplete" --msgbox "$BACKUP_FAILURES item(s) FAILED.\n\nBackup root:\n$BACKUP_ROOT\n\nOpen backup_manifest.txt and search for FAILED before wiping the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+ui_msg "Backup Incomplete" "$BACKUP_FAILURES item(s) FAILED.\n\nBackup root:\n$BACKUP_ROOT\n\nOpen backup_manifest.txt and search for FAILED before wiping the phone."
   print_error "Backup incomplete: $BACKUP_FAILURES item(s) failed. See $MANIFEST"
   exit 1
 fi
 
-dialog --title "Backup Complete" --msgbox "Backup written to:\n$BACKUP_ROOT\n\nReview backup_manifest.txt before wiping or restoring the phone." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+# Name both recovery-profile artifacts explicitly. During testing the point is
+# to confirm the readable tree and the encrypted archive are BOTH present and
+# agree; leaving that to be inferred from the manifest is how it goes unchecked.
+completion_detail=""
+if [ "$RECOVERY_PROFILE" -eq 1 ] && [ -d "$BACKUP_ROOT/recovery_profile" ]; then
+  if [ -f "$BACKUP_ROOT/recovery-profile.tar.gpg" ]; then
+    completion_detail="\n\nRecovery profile, both copies:\n  readable:  $BACKUP_ROOT/recovery_profile/\n  encrypted: $BACKUP_ROOT/recovery-profile.tar.gpg\n\nConfirm they agree:\n  tools/verify_recovery_archive.sh $BACKUP_ROOT"
+    print_info "Readable profile:  $BACKUP_ROOT/recovery_profile/"
+    print_info "Encrypted archive: $BACKUP_ROOT/recovery-profile.tar.gpg"
+    print_info "Verify they agree: tools/verify_recovery_archive.sh $BACKUP_ROOT"
+  else
+    completion_detail="\n\nRecovery profile is UNENCRYPTED at:\n  $BACKUP_ROOT/recovery_profile/\n\nAnything under imports/ is readable. Move it to trusted storage."
+    print_warning "Recovery profile is UNENCRYPTED at $BACKUP_ROOT/recovery_profile/"
+  fi
+fi
+
+ui_msg "Backup Complete" "Backup written to:\n$BACKUP_ROOT\n\nReview backup_manifest.txt before wiping or restoring the phone.$completion_detail"
 print_success "Backup complete: $BACKUP_ROOT"

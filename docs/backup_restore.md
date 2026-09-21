@@ -70,6 +70,38 @@ For Android phones only, select **Recovery profile** in the Android Backup check
 
 The profile collects available network and settings information, an installed-app inventory, and owner-selected password-manager CSV exports. It can open detected recovery apps, but it never enters secrets, defeats device or app protections, or approves export prompts. On rooted phones it can optionally copy only known readable Android Wi-Fi system records; it does not scan app-private databases.
 
-The tool creates an encrypted profile archive at `recovery-profile.tar.gpg`. The readable `recovery_profile/credentials.txt` preserves the selected CSV content without transforming credential fields. Each run asks whether to retain it; choose No unless an offline plaintext recovery copy is explicitly needed. Keep the archive passphrase separate from the backup. Authenticator seeds, passkeys, banking credentials, and provider-controlled recovery data require that providers official transfer or export flow.
+The tool creates an encrypted profile archive at `recovery-profile.tar.gpg`.
+
+You can add as many exported credential files as the phone holds -- a browser's
+passwords, a password manager's vault, an authenticator's seeds -- and the
+prompt repeats until you leave it empty. Any format is accepted (`csv`, `json`,
+`1pux`, `kdbx`); what is checked is that the file arrived whole, by comparing
+its size against the phone. An empty or truncated copy is discarded and
+reported rather than kept.
+
+Each import is stored once, readable, under `recovery_profile/imports/`. There
+is no second plaintext copy.
+
+**Both copies are kept by default.** After the archive has been created *and
+proven to extract*, the tool asks whether to keep the readable imports too, and
+the default answer is yes. Pass `--discard-plaintext` to keep credentials only
+inside the archive, or `--keep-plaintext` to keep both without being asked --
+which is what makes a test run deterministic, since nothing then depends on how
+a dialog was answered.
+
+Having both is only useful if you can confirm they say the same thing:
+
+```bash
+tools/verify_recovery_archive.sh <backup-root>
+```
+
+That decrypts the archive and compares its file list and per-file sizes against
+the readable tree. It exits non-zero and names the difference if a file is
+missing from either side or has changed size — so a stale or truncated archive
+is caught rather than assumed good.
+
+Keep the archive passphrase separate from the backup. Authenticator seeds,
+passkeys, banking credentials, and provider-controlled recovery data still
+require that provider's official transfer or export flow.
 
 Google Password Manager exports require owner authentication on the phone. After exporting, supply the exact phone path of the CSV when prompted. The tool copies only that selected file; it does not search the phone for credentials.

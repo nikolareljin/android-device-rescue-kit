@@ -1,0 +1,34 @@
+# Password managers and authenticators this tool knows how to point you at.
+#
+# Format, pipe-separated:
+#   package | display name | how the owner exports from it | launch spec (optional)
+#
+# The launch spec is passed to `am start`. Leave it empty for an app with an
+# ordinary launcher icon -- those are opened by package name. Give one for an
+# app that has no launcher activity of its own, such as Samsung Pass, which
+# lives inside Settings and can never be opened by package name.
+#
+# The tool never extracts anything from these apps. It can open one on the
+# phone so the owner can run that app's own export, and it imports the file
+# they produce. Adding a line here is all that is needed to support another
+# manager -- this file is read at run time.
+
+com.android.chrome|Chrome / Google Password Manager|Chrome > ⋮ > Settings > Google Password Manager > Settings > Export passwords
+com.google.android.gms|Google Password Manager|Settings > Google > Autofill > Google Password Manager > Settings > Export passwords
+com.samsung.android.samsungpass|Samsung Pass|Settings > Security and privacy > Samsung Pass > ⋮ > Settings > Export data|-n com.android.settings/.Settings$SecurityAndPrivacySettingsActivity
+com.bitwarden|Bitwarden|Settings > Vault > Export vault
+com.x8bit.bitwarden|Bitwarden|Settings > Vault > Export vault
+com.onepassword.android|1Password|Not exportable on Android; export from the desktop app or 1password.com
+com.lastpass.lpandroid|LastPass|Export from the LastPass web vault; Android has no export
+com.dashlane|Dashlane|Export from the Dashlane web app; Android has no export
+com.enpass.app|Enpass|Settings > Advanced > Export
+com.nordpass.android.app.password.manager|NordPass|Export from the NordPass desktop app
+com.keepersecurity.android|Keeper|Export from the Keeper web vault
+com.agilebits.onepassword|1Password (legacy)|Export from the desktop app
+
+# Authenticators. These are listed so the owner is warned, not because a file
+# can be produced: neither of the common ones offers a file export, and seeds
+# transfer by QR code to the new handset instead.
+com.google.android.apps.authenticator2|Google Authenticator|No file export. Transfer codes > Export accounts, then scan the QR on the new phone
+com.azure.authenticator|Microsoft Authenticator|No file export. Settings > Backup, or re-enrol on the new phone
+com.authy.authy|Authy|No file export. Sign in on the new phone with the same account
