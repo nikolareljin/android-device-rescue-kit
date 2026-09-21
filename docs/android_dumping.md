@@ -26,9 +26,9 @@ adrescue log /mnt/android-dumps/s22-reboot-loop
 
 - `bugreport.zip`
 - `getprop.txt`
-- logcat buffers listed in [config/logcat_buffers.txt](../config/logcat_buffers.txt)
-- Dropbox tags listed in [config/dropbox_tags.txt](../config/dropbox_tags.txt)
-- dumpsys services listed in [config/dumpsys_services.txt](../config/dumpsys_services.txt)
+- logcat buffers listed in [config/logcat_buffers.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/logcat_buffers.txt)
+- Dropbox tags listed in [config/dropbox_tags.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/dropbox_tags.txt)
+- dumpsys services listed in [config/dumpsys_services.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/dumpsys_services.txt)
 
 Edit those config files to add or remove capture targets.
 

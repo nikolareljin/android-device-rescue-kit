@@ -18,6 +18,25 @@ if [ -z "$OUTPUT_FILE" ]; then
   OUTPUT_FILE="$CAPTURE_DIR/analysis_prompt.md"
 fi
 
+# The prompt carries exactly what the privacy line at the end of it enumerates:
+# device serials, carrier and telephony state, Wi-Fi identifiers, the installed
+# app inventory and crash snippets. Create it private before a single byte is
+# written, rather than tightening the mode afterwards and losing the race.
+umask 077
+
+# A symlink already sitting at the output path would redirect the write
+# somewhere the caller did not choose. Refuse rather than follow it.
+if [ -L "$OUTPUT_FILE" ]; then
+  printf 'Refusing to write through a symlink: %s\n' "$OUTPUT_FILE" >&2
+  exit 1
+fi
+
+if ! : >"$OUTPUT_FILE" 2>/dev/null; then
+  printf 'Cannot write the prompt to: %s\n' "$OUTPUT_FILE" >&2
+  exit 1
+fi
+chmod 600 "$OUTPUT_FILE"
+
 REPORT="$CAPTURE_DIR/analysis_report.txt"
 
 if [ ! -f "$REPORT" ]; then

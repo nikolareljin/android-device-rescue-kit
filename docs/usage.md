@@ -80,9 +80,9 @@ captures/<timestamp>/analysis_report.txt
 
 The capture targets are configurable:
 
-- [config/logcat_buffers.txt](../config/logcat_buffers.txt)
-- [config/dropbox_tags.txt](../config/dropbox_tags.txt)
-- [config/dumpsys_services.txt](../config/dumpsys_services.txt)
+- [config/logcat_buffers.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/logcat_buffers.txt)
+- [config/dropbox_tags.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/dropbox_tags.txt)
+- [config/dumpsys_services.txt](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/config/dumpsys_services.txt)
 
 ## 2. Preserve Personal Data
 
@@ -147,10 +147,13 @@ The output is:
 captures/<timestamp>/analysis_prompt.md
 ```
 
-To choose the prompt path:
+The prompt is written with owner-only permissions, and is not placed in a
+shared directory. Keep it that way: it carries device serials, carrier and
+Wi-Fi identifiers, the installed-app inventory and crash snippets. To choose
+another path, give one you control:
 
 ```bash
-adrescue prompt captures/<timestamp> /tmp/android-analysis-prompt.md
+adrescue prompt captures/<timestamp> ~/android-rescue/work/prompt.md
 ```
 
 The prompt includes:

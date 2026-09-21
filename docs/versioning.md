@@ -2,7 +2,7 @@
 
 This project uses semantic versioning.
 
-The current version is stored in [VERSION](../VERSION).
+The current version is stored in [VERSION](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/VERSION).
 
 ## Version Rule
 
@@ -14,10 +14,10 @@ Every behavior, documentation, or script change must update the version before i
 
 Update both:
 
-- [VERSION](../VERSION)
-- [CHANGELOG.md](../CHANGELOG.md)
+- [VERSION](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/VERSION)
+- [CHANGELOG.md](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/CHANGELOG.md)
 
-Release branches must be named `release/X.Y.Z`, matching the value in [VERSION](../VERSION). The local wrapper scripts under `scripts/` delegate release checks and version bumps to `ci-helpers`.
+Release branches must be named `release/X.Y.Z`, matching the value in [VERSION](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/VERSION). The local wrapper scripts under `scripts/` delegate release checks and version bumps to `ci-helpers`.
 
 ## Tagging
 
@@ -44,6 +44,6 @@ scripts/lint.sh
 
 ## Current version
 
-The current version is in [VERSION](../VERSION); what changed in each release
-is in [CHANGELOG.md](../CHANGELOG.md). Neither is restated here, because a
+The current version is in [VERSION](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/VERSION); what changed in each release
+is in [CHANGELOG.md](https://github.com/nikolareljin/android-device-rescue-kit/blob/main/CHANGELOG.md). Neither is restated here, because a
 version number copied into prose is a version number that goes stale.
