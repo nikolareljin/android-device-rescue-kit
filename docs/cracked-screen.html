@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Recover an Android phone with a broken or unresponsive screen: external display over USB-C, OTG mouse, and how to enable USB debugging without touching the glass.">
+  <meta name="description" content="Recover photos and videos from a booting Android phone with a broken screen: cloud copies, removable storage, external display, accessibility, and data-preserving repair.">
   <title>Broken screen · Android Device Rescue Kit</title>
   <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
   <header class="hero" id="top">
-    <nav><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><div><a href="index.html">Home</a><a href="#decide">Which case</a><a href="#display">External display</a><a href="#buy">What to buy</a><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub</a></div></nav>
+    <nav><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><div><a href="index.html">Home</a><a href="#decide">Which case</a><a href="#no-display">No display</a><a href="#buy">What to buy</a><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub</a></div></nav>
     <div class="hero-grid">
       <div>
         <p class="eyebrow">WHEN THE GLASS IS GONE</p>
         <h1>The screen is broken.<br><span>The data is not.</span></h1>
-        <p class="lede">A phone with a dead display is usually a working computer you have lost the keyboard to. Give it a monitor and a mouse and it behaves like any other machine — including the lock screen, the settings, and the switch this toolkit needs.</p>
+        <p class="lede">A phone with a dead display is usually a working computer you have lost the controls to. First preserve the copies that may already exist; then give it a usable display, audio, or a temporary replacement screen so you can unlock it yourself.</p>
         <p><a class="button" href="#decide">Find your case →</a> <a class="button outline" href="#buy">What to buy</a></p>
         <p class="quiet">Your own device · Nothing here bypasses a lock · No exploit, no brute force</p>
       </div>
@@ -46,7 +46,7 @@
         <article>
           <small>CASE C</small>
           <h3>The display shows nothing at all</h3>
-          <p>Black, shattered beyond reading, or the panel is dead. You need video out of the phone over USB-C to a monitor. See <a href="#display">External display</a>. This is the route that saves a phone nothing else will.</p>
+          <p>Black, shattered beyond reading, or the panel is dead. First check the copies that may already exist, then try USB-C video even if the phone is not Samsung. If it has no video output, use the <a href="#no-display">no-display paths</a>.</p>
         </article>
       </div>
     </section>
@@ -55,6 +55,7 @@
       <p class="eyebrow">CASE A</p>
       <h2>Debugging already on: drive it from the computer.</h2>
       <p class="intro">If <code>adb devices</code> reports <code>device</code>, the broken glass stops mattering. You can see the phone and control it entirely from your keyboard.</p>
+      <p>Run <code>./dump probe</code> first. It immediately reports whether the phone has already authorised this computer; it never changes any phone setting. If it says <code>unauthorized</code>, accept the RSA prompt on the phone before continuing.</p>
       <p>The best tool for this is <b>scrcpy</b>, which mirrors the screen into a window and passes your mouse and keyboard through. It is free, open source, and does this one job well:</p>
       <div class="command"><code>scrcpy</code></div>
       <p>Without it, the raw commands do the same thing more slowly:</p>
@@ -72,7 +73,7 @@
       <p class="intro">Many Android phones can output video through their USB-C port. Connect one to a monitor or TV, add a mouse, and the whole phone appears on the big screen — lock screen included. From there you unlock it and enable USB debugging by hand.</p>
 
       <h3>Will your phone do it?</h3>
-      <p>The feature is <b>DisplayPort Alt Mode</b> over USB-C. It is not universal, and there is no way to check it from a computer while the phone is unreachable — so the honest test is to try the cable.</p>
+      <p>The feature is <b>DisplayPort Alt Mode</b> over USB-C. It is not universal. <b>Not having Samsung DeX does not mean the phone cannot show a picture</b>: DeX is Samsung's desktop interface, while other phones can simply mirror their screen. Check the exact model's manufacturer specifications, then try a known-good cable or powered hub.</p>
       <ul>
         <li><b>Samsung Galaxy</b> — S8 and newer, Note 8 and newer, every Z Fold and Z Flip, Tab S4 and newer. Samsung calls the desktop interface <b>DeX</b>. Since the S21 a plain USB-C to HDMI cable is enough; older models are happier through a powered hub. Most <b>A-series</b> models do <i>not</i> have it.</li>
         <li><b>Google Pixel</b> — Pixel 8 and newer output video. Earlier Pixels generally do not.</li>
@@ -95,6 +96,40 @@
       <div class="command"><code>adb devices</code></div>
       <p>When that prints your serial and <code>device</code>, the phone is reachable and the rest of this toolkit works normally. You can unplug the monitor at that point — <code>scrcpy</code> will show you the screen from now on.</p>
       <p class="quiet">On a Samsung the monitor may show the DeX desktop rather than the phone's own layout. Both reach Settings; the menus sit in different places. If DeX confuses you, look for a way to switch to <i>Screen mirroring</i> in the DeX notification.</p>
+    </section>
+
+    <section class="section pale" id="no-display">
+      <p class="eyebrow">WHEN HDMI STAYS BLACK</p>
+      <h2>Protect the photos first; do not try to defeat the lock.</h2>
+      <p class="intro">If the phone boots but has no usable panel and no USB-C video output, there is no universal cable, PC program, or button sequence that can enable USB debugging on a new computer. Modern Android protects the files with the lock-screen credential. These are the realistic recovery paths, in the order worth trying.</p>
+
+      <h3>1 · Look for copies that already left the phone</h3>
+      <ol class="steps">
+        <li><b>Keep the phone powered, cool, and on its usual Wi-Fi.</b> Do not reboot it unnecessarily. If Google Photos backup was already enabled, it can continue uploading after the phone is unlocked; sign in from another device at <a href="https://photos.google.com/">Google Photos</a> and save what is already there. Check the account's storage quota and the newest upload date.</li>
+        <li><b>Check other services already configured on this phone</b>: the manufacturer's gallery cloud, OneDrive camera upload, Dropbox, Amazon Photos, a NAS app, or a messaging app's media backup. This is a read-only check from another signed-in device; do not use remote erase or reset features.</li>
+        <li><b>Keep any evidence of what is missing.</b> Compare the most recent photo/video date in the cloud with the last known date on the phone. That tells a repair shop exactly what still needs recovering.</li>
+      </ol>
+      <p class="quiet">Cloud backup only helps if it was enabled before the break and the phone can get online. Never assume an empty cloud library means the on-phone files are gone.</p>
+
+      <h3>2 · Check for a removable microSD card</h3>
+      <p>Power the phone off only if its manual says the card can be removed safely while powered. Remove a <b>portable</b> microSD card, put it in a quality card reader, and copy it read-only first to a computer or a second drive. Look for <code>DCIM</code>, <code>Pictures</code>, <code>Movies</code>, and app media folders. Do not format or let the computer "fix" the card.</p>
+      <p>If Android had set up the card as <b>internal/adopted storage</b>, it is encrypted for that phone and a reader will not expose the photos. Put it back in the original phone and proceed with another route.</p>
+
+      <h3>3 · Use an accessibility path only if it was already available</h3>
+      <p>A wired keyboard and USB audio adapter through a powered hub can make a previously configured screen reader usable without a panel. If the owner had enabled the Android accessibility volume-key shortcut, holding both volume keys — or pressing <code>Ctrl</code> + <code>Alt</code> + <code>Z</code> on an attached keyboard — can start its assigned service. TalkBack then speaks focused controls, and the owner can unlock and navigate Settings with the keyboard.</p>
+      <p>This is not a reliable blind recipe: manufacturers vary, the shortcut has to have been enabled, and a first-use confirmation may still need a display. Use it only when the owner recognizes TalkBack and can follow its audio; otherwise go directly to a temporary-screen repair. Android documents the shortcut and its keyboard equivalent in its <a href="https://support.google.com/accessibility/android/answer/7650693">accessibility-shortcut guide</a>.</p>
+
+      <h3>4 · Ask for a data-preserving, temporary screen repair</h3>
+      <p>This is usually the best answer for a booting phone with neither video-out nor an existing accessibility route. Ask a reputable repair shop to connect a known-good compatible display/digitizer, or repair the display path <b>without replacing the mainboard, factory-resetting, flashing, unlocking the bootloader, or accepting any wipe prompt</b>. Be explicit that the sole goal is to unlock the phone yourself, enable USB debugging, and run <code>./dump photos</code> before any permanent repair.</p>
+      <p>Bring the passcode yourself; do not disclose it. Stay present while the phone is unlocked. If the shop says a reset, bootloader unlock, firmware flash, or board swap is required, stop and get a second opinion—those actions can make the original encrypted data unavailable.</p>
+
+      <h3>Once you regain control</h3>
+      <ol class="steps">
+        <li>Unlock with the owner's credential.</li>
+        <li>Enable Developer options and USB debugging as described in <a href="#enable">Turning on USB debugging</a>; accept the RSA prompt for the backup computer.</li>
+        <li>Immediately run <code>./dump photos</code>. It verifies each copied photo and video against the device.</li>
+        <li>Make a second copy of the completed backup before attempting any repair, update, or troubleshooting.</li>
+      </ol>
     </section>
 
     <section class="section pale" id="otg">
@@ -136,6 +171,8 @@
         <article><h3>Fastboot or Odin</h3><p>Flashing tools. They cannot switch on a setting inside the running system, and unlocking a bootloader wipes the device — destroying exactly what you are trying to recover.</p></article>
         <article><h3>Wireless casting</h3><p>Miracast, Smart View, Chromecast — all need you to start them from the phone's screen first. Circular, unless it was already set up before the break.</p></article>
         <article><h3>Wireless ADB</h3><p><code>adb pair</code> over Wi-Fi still requires USB debugging to be on and a pairing code read off the phone's display.</p></article>
+        <article><h3>"Enable ADB" software or data-recovery dongles</h3><p>A program cannot grant itself USB debugging or read a locked phone's encrypted storage. Treat claims that it can as a warning sign, especially if it asks for the passcode or a factory reset.</p></article>
+        <article><h3>Bootloader unlock or flashing</h3><p>These normally erase user data by design. Do not use fastboot, OEM unlocking, rooting, recovery flashing, or a firmware tool while photos are the priority.</p></article>
         <article><h3>A screen replacement first</h3><p>Sometimes the right answer — but a shop may reset the device, and a swap can trip anti-theft protection. Pull your data off first if any of these routes work.</p></article>
       </div>
     </section>
