@@ -3,6 +3,80 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.6.0
+
+### One command
+
+- Everything is now `adrescue`: `adrescue probe`, `adrescue photos /mnt/rescue`,
+  `adrescue data /mnt/rescue --recovery-profile`. From a git clone it is
+  `./adrescue`, and the help text says back whichever spelling you typed.
+- `tools/android_restore_dialog.sh` and `tools/verify_recovery_archive.sh` had
+  no top-level command. From an installed copy they were unreachable, because
+  `tools/` is not on PATH. They are now `adrescue restore` and
+  `adrescue verify`.
+- Restore is the only command that writes to a phone, so it now names the
+  target device, prints what is about to be written, and requires the word
+  `restore` typed at a terminal. With more than one phone attached it stops and
+  lists them rather than picking one.
+- `./dump`, `./dump.sh`, `./prompt`, `./update` and the three
+  `android-rescue-*` launchers keep working, silently and undocumented.
+
+### The installed launchers never worked
+
+- `android-rescue-dump probe` resolved its own directory with `dirname "$0"`,
+  which through a symlink is `~/.local/bin`, so it looked for
+  `~/.local/bin/tools/android_device_probe.sh` and exited 127. The same held
+  for `android-rescue-prompt` and `android-rescue-update`. Every entrypoint now
+  follows the symlink chain to the real install directory.
+- The installer stopped printing a hint about PATH and started fixing it, in
+  the shell's own startup file and `~/.profile`. The appended block guards
+  itself, so sourcing it twice cannot put the directory on PATH twice. fish
+  gets its own `conf.d` file in fish syntax; an unrecognised shell is never
+  edited.
+- A fresh install now clones the latest release tag rather than the tip of the
+  default branch, so a new install and `adrescue update` agree about what is
+  current.
+
+### Where rescued data goes
+
+- `photos`, `data` and `log` defaulted to `photos/`, `backups/` and `captures/`
+  relative to the current directory. Inside a clone `.gitignore` covered that;
+  after an install it scattered personal data wherever the user happened to be
+  standing.
+- An installed copy now writes to `~/android-rescue/data` and
+  `~/android-rescue/work`. Set them with `adrescue config set data-dir
+  /mnt/rescue`, `--data-dir`, or `ANDROID_RESCUE_DATA_DIR`, so rescued photos
+  can go straight to an external drive. `adrescue config` prints each resolved
+  path and where the value came from. A clone keeps the old relative defaults.
+
+### adrescue update
+
+- Upgrading meant re-running the curl installer. It is now a command that moves
+  the installation to the latest release: the GitHub releases API when
+  reachable, the remote's `X.Y.Z` tags otherwise, sorted numerically so 0.10.0
+  sorts above 0.9.0.
+- It refuses rather than guesses: uncommitted changes exit 4 and `--force` does
+  not override that, a development clone exits 3, an unreachable remote exits 5
+  and changes nothing. Already current, or ahead of the latest release, it says
+  so and stops. A shallow install stays shallow.
+- Installing host dependencies is now `adrescue bootstrap`. `./update` keeps
+  its old meaning, because the installer calls it and every existing
+  `android-rescue-update` symlink points at it.
+
+### Documentation
+
+- There were three install narratives and they disagreed: README installed PATH
+  launchers then told you to run `./dump log`, the site showed only a git clone
+  and never mentioned the installer, and three guides opened with
+  "install host dependencies: ./update" without saying where the working
+  directory came from. `docs/installation.md` now owns the install story and
+  everything else carries the same short form.
+- The site gained an install section on both pages, and the copy JS moved to
+  `docs/assets/copy.js`. The broken-screen page had no script element at all,
+  so copy buttons there would have been dead.
+- README and `docs/versioning.md` claimed version 0.3.2 against a VERSION of
+  0.5.1. Prose no longer carries a version number.
+
 ## 2026-09-21 — v0.5.1
 
 ### An unreachable phone is not an empty phone
