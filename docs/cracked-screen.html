@@ -6,10 +6,11 @@
   <meta name="description" content="Recover photos and videos from a booting Android phone with a broken screen: cloud copies, removable storage, external display, accessibility, and data-preserving repair.">
   <title>Broken screen · Android Device Rescue Kit</title>
   <link rel="stylesheet" href="assets/site.css">
+  <script src="assets/copy.js" defer></script>
 </head>
 <body>
   <header class="hero" id="top">
-    <nav><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><div><a href="index.html">Home</a><a href="#decide">Which case</a><a href="#no-display">No display</a><a href="#buy">What to buy</a><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub</a></div></nav>
+    <nav><a class="brand" href="index.html"><b>+</b> Android Device Rescue Kit</a><div><a href="index.html">Home</a><a href="#install">Install</a><a href="#decide">Which case</a><a href="#no-display">No display</a><a href="#buy">What to buy</a><a href="https://github.com/nikolareljin/android-device-rescue-kit">GitHub</a></div></nav>
     <div class="hero-grid">
       <div>
         <p class="eyebrow">WHEN THE GLASS IS GONE</p>
@@ -51,18 +52,26 @@
       </div>
     </section>
 
+    <section class="section" id="install">
+      <p class="eyebrow">ON THE COMPUTER, NOT THE PHONE</p>
+      <h2>Install the toolkit while you wait.</h2>
+      <p class="intro">Everything below runs on the computer the phone will be plugged into. One line, no sudo, on Linux or macOS, or in a WSL terminal on Windows. Nothing here touches the phone.</p>
+      <div class="command"><code>curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash</code><button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash" aria-label="Copy the install command">⧉ Copy</button></div>
+      <p class="quiet">It installs into your home directory and gives you one command, <code>adrescue</code>. Start with <code>adrescue probe</code>, which says immediately whether the phone has already authorised this computer. Full notes, including Windows USB passthrough, are in the <a href="https://github.com/nikolareljin/android-device-rescue-kit/blob/main/docs/installation.md">installation guide</a>.</p>
+    </section>
+
     <section class="section pale" id="already-on">
       <p class="eyebrow">CASE A</p>
       <h2>Debugging already on: drive it from the computer.</h2>
       <p class="intro">If <code>adb devices</code> reports <code>device</code>, the broken glass stops mattering. You can see the phone and control it entirely from your keyboard.</p>
-      <p>Run <code>./dump probe</code> first. It immediately reports whether the phone has already authorised this computer; it never changes any phone setting. If it says <code>unauthorized</code>, accept the RSA prompt on the phone before continuing.</p>
+      <p>Run <code>adrescue probe</code> first. It immediately reports whether the phone has already authorised this computer; it never changes any phone setting. If it says <code>unauthorized</code>, accept the RSA prompt on the phone before continuing.</p>
       <p>The best tool for this is <b>scrcpy</b>, which mirrors the screen into a window and passes your mouse and keyboard through. It is free, open source, and does this one job well:</p>
-      <div class="command"><code>scrcpy</code></div>
+      <div class="command"><code>scrcpy</code><button class="copy" type="button" data-copy="scrcpy" aria-label="Copy the scrcpy command">⧉ Copy</button></div>
       <p>Without it, the raw commands do the same thing more slowly:</p>
-      <div class="command"><code>adb exec-out screencap -p &gt; screen.png</code></div>
-      <div class="command"><code>adb shell input text 1234</code></div>
-      <div class="command"><code>adb shell input keyevent 66</code></div>
-      <div class="command"><code>adb shell input tap 540 1200</code></div>
+      <div class="command"><code>adb exec-out screencap -p &gt; screen.png</code><button class="copy" type="button" data-copy="adb exec-out screencap -p &gt; screen.png" aria-label="Copy the screenshot command">⧉ Copy</button></div>
+      <div class="command"><code>adb shell input text 1234</code><button class="copy" type="button" data-copy="adb shell input text 1234" aria-label="Copy the passcode typing command">⧉ Copy</button></div>
+      <div class="command"><code>adb shell input keyevent 66</code><button class="copy" type="button" data-copy="adb shell input keyevent 66" aria-label="Copy the Enter key command">⧉ Copy</button></div>
+      <div class="command"><code>adb shell input tap 540 1200</code><button class="copy" type="button" data-copy="adb shell input tap 540 1200" aria-label="Copy the screen tap command">⧉ Copy</button></div>
       <p>Take a screenshot, look at it on the computer, work out where to tap, tap it, screenshot again. Tedious, but it works with no extra hardware. <code>input text</code> types your own passcode; <code>keyevent 66</code> is Enter.</p>
       <p class="quiet">Nothing here guesses or bypasses a passcode. You supply one you already know, exactly as if you were tapping it in.</p>
     </section>
@@ -93,7 +102,7 @@
         <li><b>Connect the phone to your computer</b> and accept the <i>Allow USB debugging?</i> dialog when it appears on the monitor. Tick <b>Always allow from this computer</b>.</li>
         <li><b>Confirm on the computer:</b></li>
       </ol>
-      <div class="command"><code>adb devices</code></div>
+      <div class="command"><code>adb devices</code><button class="copy" type="button" data-copy="adb devices" aria-label="Copy the device check command">⧉ Copy</button></div>
       <p>When that prints your serial and <code>device</code>, the phone is reachable and the rest of this toolkit works normally. You can unplug the monitor at that point — <code>scrcpy</code> will show you the screen from now on.</p>
       <p class="quiet">On a Samsung the monitor may show the DeX desktop rather than the phone's own layout. Both reach Settings; the menus sit in different places. If DeX confuses you, look for a way to switch to <i>Screen mirroring</i> in the DeX notification.</p>
     </section>
@@ -120,14 +129,14 @@
       <p>This is not a reliable blind recipe: manufacturers vary, the shortcut has to have been enabled, and a first-use confirmation may still need a display. Use it only when the owner recognizes TalkBack and can follow its audio; otherwise go directly to a temporary-screen repair. Android documents the shortcut and its keyboard equivalent in its <a href="https://support.google.com/accessibility/android/answer/7650693">accessibility-shortcut guide</a>.</p>
 
       <h3>4 · Ask for a data-preserving, temporary screen repair</h3>
-      <p>This is usually the best answer for a booting phone with neither video-out nor an existing accessibility route. Ask a reputable repair shop to connect a known-good compatible display/digitizer, or repair the display path <b>without replacing the mainboard, factory-resetting, flashing, unlocking the bootloader, or accepting any wipe prompt</b>. Be explicit that the sole goal is to unlock the phone yourself, enable USB debugging, and run <code>./dump photos</code> before any permanent repair.</p>
+      <p>This is usually the best answer for a booting phone with neither video-out nor an existing accessibility route. Ask a reputable repair shop to connect a known-good compatible display/digitizer, or repair the display path <b>without replacing the mainboard, factory-resetting, flashing, unlocking the bootloader, or accepting any wipe prompt</b>. Be explicit that the sole goal is to unlock the phone yourself, enable USB debugging, and run <code>adrescue photos</code> before any permanent repair.</p>
       <p>Bring the passcode yourself; do not disclose it. Stay present while the phone is unlocked. If the shop says a reset, bootloader unlock, firmware flash, or board swap is required, stop and get a second opinion—those actions can make the original encrypted data unavailable.</p>
 
       <h3>Once you regain control</h3>
       <ol class="steps">
         <li>Unlock with the owner's credential.</li>
         <li>Enable Developer options and USB debugging as described in <a href="#enable">Turning on USB debugging</a>; accept the RSA prompt for the backup computer.</li>
-        <li>Immediately run <code>./dump photos</code>. It verifies each copied photo and video against the device.</li>
+        <li>Immediately run <code>adrescue photos /mnt/rescue/photos</code>. It verifies each copied photo and video against the device.</li>
         <li>Make a second copy of the completed backup before attempting any repair, update, or troubleshooting.</li>
       </ol>
     </section>
@@ -223,7 +232,7 @@
 
     <section class="warning">
       <div><p class="eyebrow">ONCE YOU ARE IN</p><h2>Back up before anything else.</h2></div>
-      <p>A phone reachable over ADB may not stay that way — batteries die, cables fail, and a cracked panel gets worse. Take the data off first, verify it, and only then think about repairs. Start with <code>./dump photos</code>, which copies every photo and video and checks each one against the phone before it reports success.</p>
+      <p>A phone reachable over ADB may not stay that way — batteries die, cables fail, and a cracked panel gets worse. Take the data off first, verify it, and only then think about repairs. Start with <code>adrescue photos</code>, which copies every photo and video and checks each one against the phone before it reports success.</p>
     </section>
 
   </main>
