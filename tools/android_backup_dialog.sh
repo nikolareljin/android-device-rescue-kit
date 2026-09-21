@@ -164,12 +164,24 @@ select_backup_root() {
     return 0
   fi
 
+  # Where a bare `adrescue data` writes. The dispatcher resolves the data
+  # directory and passes it in; on its own this script keeps the old
+  # cwd-relative path.
+  local default_root="${ANDROID_RESCUE_DEFAULT_BACKUP_ROOT:-backups/$TIMESTAMP}"
+
+  # No terminal to answer a dialog. Previously this ran `dialog` anyway, which
+  # failed, and an unattended backup with no destination reported "cancelled".
+  if [ "$INTERACTIVE" -eq 0 ]; then
+    printf '%s\n' "$default_root"
+    return 0
+  fi
+
   local mode base_dir
   mode=$(dialog --stdout \
     --title "Backup Destination" \
     --radiolist "Choose where to store the backup. Custom paths must already be mounted on this computer." \
     "$DIALOG_HEIGHT" "$DIALOG_WIDTH" 4 \
-    local "Project backups folder: backups/$TIMESTAMP" on \
+    local "$default_root" on \
     custom "Custom destination path" off)
 
   if [ $? -ne 0 ]; then
@@ -178,7 +190,7 @@ select_backup_root() {
 
   case "$mode" in
     local)
-      printf 'backups/%s\n' "$TIMESTAMP"
+      printf '%s\n' "$default_root"
       ;;
     custom)
       base_dir=$(dialog --stdout \

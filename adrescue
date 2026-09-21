@@ -390,7 +390,13 @@ cmd_restore() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       -h|--help|help) usage_for restore; return 0 ;;
-      --serial) serial="${2:-}"; shift 2 || true ;;
+      # Validate before shifting: `shift 2` with one argument left shifts
+      # nothing and returns non-zero, so the loop would spin forever.
+      --serial)
+        serial="${2:-}"
+        [ -n "$serial" ] || { printf -- '--serial needs a device serial.\n' >&2; return 2; }
+        shift 2
+        ;;
       --yes) assume_yes=1; shift ;;
       -*) printf 'Unknown option for restore: %s\n' "$1" >&2; usage_for restore >&2; return 2 ;;
       *)
@@ -536,9 +542,15 @@ case "$mode" in
     # export rather than `VAR=x exec ...`: an assignment prefixed to a special
     # builtin sets the variable without marking it for export, so the tool would
     # never see it.
+    # Pass the default rather than injecting it as an argument: the tool still
+    # offers its destination chooser, and the chooser's default is now the
+    # configured data directory instead of backups/ beside the current one.
     case "${1:-}" in
       -h|--help|help) : ;;
-      '') set -- "$(default_destination data backups)" ;;
+      *)
+        ANDROID_RESCUE_DEFAULT_BACKUP_ROOT="$(default_destination data backups)"
+        export ANDROID_RESCUE_DEFAULT_BACKUP_ROOT
+        ;;
     esac
     export ANDROID_RESCUE_CMD="$SELF data"
     exec "$ROOT/tools/android_backup_dialog.sh" ${1+"$@"}

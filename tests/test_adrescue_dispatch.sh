@@ -100,6 +100,21 @@ pass
 # documented no-argument form before it ran.
 expect_exit 'data with no arguments starts' 0 "$ADRESCUE" data
 
+# It must pass the default through the environment, NOT as an argument:
+# supplying a destination argument makes the tool skip its destination chooser.
+cat >"$WORK/root/tools/android_backup_dialog.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'android_backup_dialog %s
+' "$*"
+printf 'default_root=%s
+' "${ANDROID_RESCUE_DEFAULT_BACKUP_ROOT:-unset}"
+EOF
+chmod +x "$WORK/root/tools/android_backup_dialog.sh"
+out="$(run "$ADRESCUE" data)" || fail 'data with no arguments exits 0' "$out"
+grep -Eq '^android_backup_dialog *$' <<<"$out" || fail 'data must forward no destination argument' "$out"
+grep -Fq "default_root=$HOME/android-rescue/data/backups/" <<<"$out"   || fail 'data must pass the resolved data directory in the environment' "$out"
+pass
+
 # Default destinations come from the data and work directories.
 out="$(run "$ADRESCUE" photos)" || fail 'photos with no destination' "$out"
 grep -Fq "$HOME/android-rescue/data/photos/" <<<"$out" || fail 'photos uses the data dir' "$out"
