@@ -3,6 +3,30 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.6.2
+
+### The analysis prompt is private
+
+- `adrescue prompt` wrote `analysis_prompt.md` at the default umask, and the
+  documentation offered `/tmp/android-analysis-prompt.md` as the example path.
+  The file holds what its own closing privacy line enumerates: device serials,
+  carrier and telephony state, Wi-Fi identifiers, the installed-app inventory
+  and crash snippets. On a shared machine any local user could read it.
+- It is now created under `umask 077` and `chmod 600` before a single byte is
+  written, rather than tightened afterwards. A symlink already sitting at the
+  output path is refused rather than followed, since it would redirect the
+  write somewhere the caller did not choose.
+- The `/tmp` example is gone. `tests/test_analysis_prompt.sh` asserts the mode
+  of a generated prompt, for both the default path and an explicit one.
+
+### Links that 404 on the published site
+
+- `docs/` is published verbatim with no Markdown rendering, so the twelve
+  `../config/...`, `../VERSION` and `../CHANGELOG.md` links in the guides
+  escaped the site root. They resolved only in GitHub's file browser.
+- They are absolute blob URLs now, which work in both places. Each was checked
+  by fetching it.
+
 ## 2026-09-21 — v0.6.1
 
 ### Leftovers from the adrescue rename
