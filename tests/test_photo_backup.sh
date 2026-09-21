@@ -73,6 +73,13 @@ WORK="${MOCK_WORK:?}"
 dev_to_local() { printf '%s%s\n' "$DEVICE" "$1"; }
 
 case "${1:-}" in
+  devices)
+    # require_device reads this. A test can present an unauthorised or absent
+    # phone by writing to device_state.
+    printf 'List of devices attached\n'
+    st="$(cat "${MOCK_WORK:-/nonexistent}/device_state" 2>/dev/null || echo device)"
+    [ "$st" = "none" ] || printf 'MOCKSERIAL\t%s\n' "$st"
+    exit 0 ;;
   shell)
     shift
     # Real adb shell reads stdin and forwards it to the device. The mock drains
@@ -159,6 +166,8 @@ MOCK
 chmod +x "$BIN/adb"
 
 export MOCK_DEVICE="$DEVICE" MOCK_WORK="$WORK"
+# The fake phone is attached and authorised unless a test says otherwise.
+printf 'device\n' >"$WORK/device_state"
 export PATH="$BIN:$PATH"
 export PHOTO_ROOTS="/storage"
 
@@ -282,6 +291,25 @@ check "a truncated file past batch 1 is repaired" "bulk-240" \
 check "byte total equals the actual bytes on disk" \
   "$(find "$BK/photos" -type f -exec wc -c {} + | awk '/total$/ {s += $1} END {printf "%d", s}')" \
   "$(awk '/^Bytes on disk/ {print $NF}' "$BK/photos_report.txt")"
+
+# --- 4c. an unauthorised phone is not an empty phone ----------------------
+#
+#     Found by withholding the authorisation dialog on a real handset holding
+#     5,399 photos: discovery returned nothing, the run reported "No photos or
+#     videos were found on the device" and exited 0. "Could not ask" and
+#     "asked, and there are none" must never read the same.
+
+build_device
+printf 'unauthorized\n' >"$WORK/device_state"
+BK="$WORK/bk_unauth"; mkdir -p "$BK"
+rc=$(ADB_WAIT_TIMEOUT=2 run_backup "$BK")
+check "an unauthorised phone FAILS the run" "1" "$rc"
+check "and says the phone has not authorised this computer" "1" \
+  "$(grep -c 'NOT authorised' "$WORK/out.txt")"
+check "it does NOT claim the phone is empty" "0" \
+  "$(grep -c 'No photos or videos were found' "$WORK/out.txt")"
+check "nothing is written" "0" "$(find "$BK" -type f 2>/dev/null | wc -l | tr -d ' ')"
+printf 'device\n' >"$WORK/device_state"
 
 # --- 5. a device with no photos is not an error ---------------------------
 

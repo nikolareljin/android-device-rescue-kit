@@ -8,6 +8,11 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/device_screen.sh"
 
 require_tool adb || exit 1
+# Before a destination is chosen or a single file is created. An unreachable
+# phone used to leave an empty backup_manifest.txt behind, which reads like a
+# backup that was attempted.
+adb start-server >/dev/null 2>&1 || true
+require_device || exit 1
 check_if_dialog_installed || exit 1
 MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
 MESSAGE_WIDTH=$((DIALOG_WIDTH < 74 ? DIALOG_WIDTH : 74))
@@ -613,9 +618,7 @@ collect_recovery_profile() {
     fi
   fi
 }
-adb start-server
-print_info 'Waiting for device...'
-adb wait-for-device
+# The device was checked before any of this was created; see the top of the file.
 print_info "Writing backup to $BACKUP_ROOT"
 
 cat >"$MANIFEST" <<EOF

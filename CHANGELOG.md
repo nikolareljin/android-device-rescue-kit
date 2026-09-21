@@ -3,6 +3,32 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.5.1
+
+### An unreachable phone is not an empty phone
+
+- Found by withholding the authorisation dialog on a handset holding 5,399
+  photos: `./dump photos` reported **"No photos or videos were found on the
+  device"** and **exited 0**. Not "I could not ask" -- "there is nothing there".
+  Someone could read that, believe the phone was already empty, and wipe it.
+- `./dump log` and `./dump data` failed differently and no better: both waited
+  forever on `adb wait-for-device`, which blocks on a phone that is attached but
+  unauthorised and says nothing about why.
+- `require_device` now runs before anything else in all four entrypoints. It
+  distinguishes ready, unauthorised, offline, absent and multiple, names what it
+  found, and waits briefly -- the authorisation dialog is usually behind a lock
+  screen and the owner may be about to accept it. Then it exits non-zero having
+  written nothing.
+- `tools/collect_android_dumps.sh` never sourced `lib/common.sh` at all, so it
+  had none of the shared helpers.
+- The guard runs before a destination is chosen, because an unreachable phone
+  used to leave an empty `backup_manifest.txt` behind -- an artefact that reads
+  like a backup was attempted.
+
+This is the same shape as every other defect found this week: "could not
+inspect" and "inspected, found nothing" producing identical output. It is
+written up in the fleet conventions, and it still shipped here.
+
 ## 2026-09-21 — v0.5.0
 
 ### The phone stays awake for the step that needs you
