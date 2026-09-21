@@ -27,6 +27,12 @@ if [ -z "$BACKUP_ROOT" ]; then
   exit 2
 fi
 
+# Before anything else. Without this, an unauthorised phone produced empty
+# MediaStore and sweep results, and the run reported "No photos or videos were
+# found on the device" and exited 0 -- indistinguishable from a genuinely empty
+# phone, on a handset holding 5,399 photos.
+require_device || exit 1
+
 PHOTO_ROOTS="${PHOTO_ROOTS:-/sdcard /storage}"
 PHOTO_PULL_RETRIES="${PHOTO_PULL_RETRIES:-3}"
 

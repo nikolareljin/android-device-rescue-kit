@@ -35,8 +35,7 @@ push_if_present() {
 }
 
 adb start-server
-print_info 'Waiting for device...'
-adb wait-for-device
+require_device || exit 1
 
 CHOICES=$(dialog --stdout --separate-output \
   --title "Android Restore" \

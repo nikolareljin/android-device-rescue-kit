@@ -4,6 +4,8 @@ set -u
 OUT_DIR="${1:-captures/$(date +%Y%m%d-%H%M%S)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=tools/lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 LOGCAT_BUFFERS_FILE="${LOGCAT_BUFFERS_FILE:-$ROOT_DIR/config/logcat_buffers.txt}"
 DROPBOX_TAGS_FILE="${DROPBOX_TAGS_FILE:-$ROOT_DIR/config/dropbox_tags.txt}"
 DUMPSYS_SERVICES_FILE="${DUMPSYS_SERVICES_FILE:-$ROOT_DIR/config/dumpsys_services.txt}"
@@ -26,9 +28,9 @@ if ! command -v adb >/dev/null 2>&1; then
 fi
 
 adb start-server
+require_device || exit 1
 
 printf 'Waiting for device...\n'
-adb wait-for-device
 
 printf 'Writing capture to %s\n' "$OUT_DIR"
 

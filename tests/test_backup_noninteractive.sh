@@ -59,6 +59,13 @@ dev_to_local() {
 }
 
 case "${1:-}" in
+  devices)
+    # require_device reads this. MOCK_DEVICE_STATE lets a test present an
+    # unauthorised or absent phone.
+    printf 'List of devices attached\n'
+    st="$(cat "${MOCK_WORK:-/nonexistent}/device_state" 2>/dev/null || echo device)"
+    [ "$st" = "none" ] || printf 'MOCKSERIAL\t%s\n' "$st"
+    exit 0 ;;
   start-server|wait-for-device|kill-server) exit 0 ;;
   pull)
     shift
