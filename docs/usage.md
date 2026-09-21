@@ -6,7 +6,9 @@ This guide covers the three main workflows:
 2. Preserve personal data before reset, reflash, or repair.
 3. Build a focused analysis prompt from the dumped data.
 
-Raw captures and backups are private. Keep them in ignored directories such as `captures/` and `backups/`, or write them to another mounted destination.
+Raw captures and backups are private. Write them somewhere you control: an
+external disk, a mounted share, or the data directory set with
+`adrescue config set data-dir`. Never into a git repository.
 
 ## Unattended runs
 
@@ -30,7 +32,7 @@ phone is skipped rather than assumed.
 ## Photos
 
 ```bash
-./dump photos [destination]
+adrescue photos [destination]
 ```
 
 Finds every photo and video through MediaStore and a filesystem sweep, copies
@@ -41,22 +43,21 @@ truncated ones are copied again.
 
 ## 1. Dump Device Information
 
-Install host dependencies:
+If you have not installed the toolkit yet, start with
+[Installation](installation.md). The installer put the host dependencies in
+place, so there is nothing to run here first.
+
+Enable USB debugging on the phone, connect it by USB, then check that this
+computer is authorised:
 
 ```bash
-./update
-```
-
-Enable USB debugging on the phone, connect it by USB, then verify the device is visible:
-
-```bash
-adb devices
+adrescue probe
 ```
 
 Collect a full diagnostic dump:
 
 ```bash
-./dump log
+adrescue log
 ```
 
 The default output is:
@@ -68,7 +69,7 @@ captures/<timestamp>/
 To write to another already mounted location:
 
 ```bash
-./dump log /mnt/android-dumps/s22-reboot-loop
+adrescue log /mnt/android-dumps/s22-reboot-loop
 ```
 
 The dump command also runs local triage. The triage output is:
@@ -88,7 +89,7 @@ The capture targets are configurable:
 Run the backup workflow:
 
 ```bash
-./dump data
+adrescue data ~/android-rescue/backup
 ```
 
 The dialog lets you choose (including an opt-in Recovery profile item):
@@ -107,7 +108,7 @@ The dialog lets you choose (including an opt-in Recovery profile item):
 To include the opt-in recovery profile (settings, network details, detected-app recovery guidance, and an owner-selected password-manager export):
 
 ```bash
-./dump data /mnt/android-backups/s22-before-reset --recovery-profile
+adrescue data /mnt/android-backups/s22-before-reset --recovery-profile
 ```
 
 An encrypted profile archive is always created when encryption succeeds; the readable credential TXT copy is retained only after an explicit confirmation.
@@ -115,7 +116,7 @@ An encrypted profile archive is always created when encryption succeeds; the rea
 To pass a destination directly:
 
 ```bash
-./dump data /mnt/android-backups/s22-before-reset
+adrescue data /mnt/android-backups/s22-before-reset
 ```
 
 Important limits:
@@ -127,7 +128,7 @@ Important limits:
 Restore shared-storage data after reset or replacement:
 
 ```bash
-tools/android_restore_dialog.sh /mnt/android-backups/s22-before-reset
+adrescue restore /mnt/android-backups/s22-before-reset
 ```
 
 Install and sign in to apps before expecting their own cloud or transfer restores to complete.
@@ -137,7 +138,7 @@ Install and sign in to apps before expecting their own cloud or transfer restore
 Generate a model-ready prompt from a capture:
 
 ```bash
-./prompt captures/<timestamp>
+adrescue prompt captures/<timestamp>
 ```
 
 The output is:
@@ -149,7 +150,7 @@ captures/<timestamp>/analysis_prompt.md
 To choose the prompt path:
 
 ```bash
-./prompt captures/<timestamp> /tmp/android-analysis-prompt.md
+adrescue prompt captures/<timestamp> /tmp/android-analysis-prompt.md
 ```
 
 The prompt includes:

@@ -4,22 +4,25 @@ The collection workflow is intended for unstable devices that still answer ADB c
 
 ## Basic Capture
 
+Install the toolkit first, see [Installation](installation.md). Then, with USB
+debugging on and the phone connected:
+
 ```bash
-./update
-./dump log
+adrescue log
 ```
 
-The output goes to `captures/<timestamp>/` by default.
+The output goes to `captures/<timestamp>/` under the work directory, which
+defaults to `~/android-rescue/work`. Run `adrescue config` to see or change it.
 
 To write to a specific mounted destination:
 
 ```bash
-./dump log /mnt/android-dumps/s22-reboot-loop
+adrescue log /mnt/android-dumps/s22-reboot-loop
 ```
 
 ## What To Capture
 
-The script collects:
+`adrescue log` collects:
 
 - `bugreport.zip`
 - `getprop.txt`

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SCRIPT: install.sh
+# DESCRIPTION: Install the Android Device Rescue Kit for one user, no sudo.
+# USAGE: curl -fsSL .../install.sh | bash
 set -euo pipefail
 
 REPOSITORY_URL="https://github.com/nikolareljin/android-device-rescue-kit.git"
@@ -9,11 +12,17 @@ usage() {
   cat <<'USAGE'
 Usage: install.sh [--dry-run]
 
-Installs Android Device Rescue Kit for Linux or macOS. The installer clones the
-public repository, installs its documented host dependencies, and creates:
-  android-rescue-dump
-  android-rescue-prompt
-  android-rescue-update
+Installs the Android Device Rescue Kit for Linux or macOS, for the current user
+only. No sudo, nothing written outside your home directory. It clones the latest
+release, installs the documented host dependencies, creates the command
+
+  adrescue
+
+and puts its directory on PATH if it is not there already.
+
+The launchers android-rescue-dump, android-rescue-prompt and
+android-rescue-update are also created, for anyone who installed before
+adrescue existed.
 
 Optional environment variables:
   ANDROID_RESCUE_INSTALL_DIR  Repository location
@@ -35,7 +44,17 @@ case "$(uname -s)" in
 esac
 
 if [ "$dry_run" -eq 1 ]; then
-  printf 'Would install %s into %s and create launchers in %s.\n' "$REPOSITORY_URL" "$INSTALL_DIRECTORY" "$BIN_DIRECTORY"
+  printf 'Would install %s\n' "$REPOSITORY_URL"
+  printf '  repository -> %s\n' "$INSTALL_DIRECTORY"
+  printf '  launchers  -> %s\n' "$BIN_DIRECTORY"
+  printf '      adrescue\n'
+  printf '      android-rescue-dump\n'
+  printf '      android-rescue-prompt\n'
+  printf '      android-rescue-update\n'
+  case ":${PATH}:" in
+    *":${BIN_DIRECTORY}:"*) printf '  %s is already on PATH.\n' "$BIN_DIRECTORY" ;;
+    *) printf '  would add %s to PATH in your shell startup file.\n' "$BIN_DIRECTORY" ;;
+  esac
   exit 0
 fi
 
@@ -67,6 +86,18 @@ ensure_git() {
   command -v git >/dev/null 2>&1 || { printf 'git installation failed.\n' >&2; exit 1; }
 }
 
+# Releases are the unprefixed X.Y.Z tags. The anchor drops v-prefixed,
+# prerelease and named tags; the numeric sort keeps 0.10.0 above 0.9.0, which a
+# lexical sort does not.
+latest_release_tag() {
+  git ls-remote --tags --refs "$REPOSITORY_URL" 2>/dev/null \
+    | awk '{ print $2 }' \
+    | sed 's#refs/tags/##' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -t. -k1,1n -k2,2n -k3,3n \
+    | tail -1
+}
+
 ensure_git
 
 if [ -e "$INSTALL_DIRECTORY" ] && [ ! -d "$INSTALL_DIRECTORY/.git" ]; then
@@ -76,22 +107,54 @@ fi
 
 if [ -d "$INSTALL_DIRECTORY/.git" ]; then
   printf 'Updating existing installation at %s\n' "$INSTALL_DIRECTORY"
-  git -C "$INSTALL_DIRECTORY" pull --ff-only
+  if [ -x "$INSTALL_DIRECTORY/scripts/self_update.sh" ]; then
+    # Not `git pull --ff-only`: adrescue update leaves the checkout detached at
+    # a release tag, and pull has no branch to fast-forward there.
+    "$INSTALL_DIRECTORY/scripts/self_update.sh" --force
+  else
+    git -C "$INSTALL_DIRECTORY" pull --ff-only
+  fi
 else
   mkdir -p "$(dirname "$INSTALL_DIRECTORY")"
-  git clone --depth 1 "$REPOSITORY_URL" "$INSTALL_DIRECTORY"
+  release_tag="$(latest_release_tag || true)"
+  if [ -n "$release_tag" ]; then
+    printf 'Installing release %s\n' "$release_tag"
+    git clone --depth 1 --branch "$release_tag" "$REPOSITORY_URL" "$INSTALL_DIRECTORY"
+  else
+    printf 'No release tags found; installing the default branch.\n' >&2
+    git clone --depth 1 "$REPOSITORY_URL" "$INSTALL_DIRECTORY"
+  fi
 fi
 
-"$INSTALL_DIRECTORY/update"
+# scripts/bootstrap.sh is the name from 0.6.0 onwards; ./update is what older
+# releases carry, and this installer may have just checked one of those out.
+if [ -x "$INSTALL_DIRECTORY/scripts/bootstrap.sh" ]; then
+  "$INSTALL_DIRECTORY/scripts/bootstrap.sh"
+else
+  "$INSTALL_DIRECTORY/update"
+fi
 
-mkdir -p "$BIN_DIRECTORY"
-for command_name in dump prompt update; do
-  ln -sfn "$INSTALL_DIRECTORY/$command_name" "$BIN_DIRECTORY/android-rescue-$command_name"
-done
+if [ -x "$INSTALL_DIRECTORY/scripts/link_launchers.sh" ]; then
+  "$INSTALL_DIRECTORY/scripts/link_launchers.sh" "$INSTALL_DIRECTORY" "$BIN_DIRECTORY"
+else
+  mkdir -p "$BIN_DIRECTORY"
+  for command_name in dump prompt update; do
+    ln -sfn "$INSTALL_DIRECTORY/$command_name" "$BIN_DIRECTORY/android-rescue-$command_name"
+  done
+fi
 
-case ":${PATH}:" in
-  *":${BIN_DIRECTORY}:"*) ;;
-  *) printf '\nAdd this directory to PATH, then open a new terminal:\n  %s\n' "$BIN_DIRECTORY" ;;
-esac
+if [ -x "$INSTALL_DIRECTORY/scripts/ensure_bin_on_path.sh" ]; then
+  "$INSTALL_DIRECTORY/scripts/ensure_bin_on_path.sh" "$BIN_DIRECTORY"
+else
+  case ":${PATH}:" in
+    *":${BIN_DIRECTORY}:"*) ;;
+    *) printf '\nAdd this directory to PATH, then open a new terminal:\n  %s\n' "$BIN_DIRECTORY" ;;
+  esac
+fi
 
-printf '\nInstalled. Start with: android-rescue-dump --help\n'
+if [ -x "$INSTALL_DIRECTORY/adrescue" ]; then
+  printf '\nInstalled. Start with: adrescue --help\n'
+  printf 'Then plug in the phone and run: adrescue probe\n'
+else
+  printf '\nInstalled. Start with: android-rescue-dump --help\n'
+fi

@@ -14,7 +14,7 @@ MESSAGE_WIDTH=$((DIALOG_WIDTH < 78 ? DIALOG_WIDTH : 78))
 LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
 
 if [ -z "$BACKUP_ROOT" ] || [ ! -d "$BACKUP_ROOT/shared" ]; then
-  printf 'Usage: %s <backup-directory>\n' "$0" >&2
+  printf 'Usage: %s <backup-directory>\n' "${ANDROID_RESCUE_CMD:-tools/android_restore_dialog.sh}" >&2
   exit 1
 fi
 

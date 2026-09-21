@@ -31,7 +31,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$BACKUP_ROOT" ]; then
-  printf 'Usage: %s <backup-root> [--passphrase-fd N]\n' "$0" >&2
+  printf 'Usage: %s <backup-root> [--passphrase-fd N]\n' "${ANDROID_RESCUE_CMD:-tools/verify_recovery_archive.sh}" >&2
   exit 2
 fi
 

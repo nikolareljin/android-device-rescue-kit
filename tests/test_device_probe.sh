@@ -19,7 +19,7 @@ chmod +x "$WORK/bin/adb"
 check() {
   local name="$1" expected="$2" row="$3" needle="$4" out rc
   set +e
-  out="$(PATH="$WORK/bin:$PATH" MOCK_ADB_ROW="$row" "$ROOT/dump" probe 2>&1)"
+  out="$(PATH="$WORK/bin:$PATH" MOCK_ADB_ROW="$row" "$ROOT/adrescue" probe 2>&1)"
   rc=$?
   set -e
   if [ "$rc" -ne "$expected" ] || ! grep -Fq "$needle" <<<"$out"; then

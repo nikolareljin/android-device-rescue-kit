@@ -2,7 +2,7 @@
 # SCRIPT: android_device_probe.sh
 # DESCRIPTION: Report whether a connected phone can be backed up over ADB.
 # USAGE: tools/android_device_probe.sh
-# EXAMPLE: ./dump probe
+# EXAMPLE: adrescue probe
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +15,7 @@ state="$(adb_device_state "$(adb devices 2>/dev/null)")"
 case "$state" in
   device)
     print_success "Phone is connected and has authorised this computer."
-    print_info "Start the priority backup now: ./dump photos"
+    print_info "Start the priority backup now: ${ANDROID_RESCUE_SELF:-./adrescue} photos"
     ;;
   unauthorized)
     print_warning "Phone is connected, but this computer is not authorised."
