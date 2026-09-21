@@ -171,15 +171,18 @@ the phone's own screen. **ADB cannot enable ADB** — if a computer could turn i
 on without someone agreeing on the handset, a stolen phone would be an open
 book.
 
+Run `./dump probe` as soon as the cable is connected. It immediately tells you whether this computer is already authorised; it never waits or changes a phone setting. An `unauthorized` result still needs approval on the phone.
+
 The way through is hardware: give the phone a monitor and a mouse over USB-C,
 unlock it there, and enable debugging by hand. Many phones output video through
 their USB-C port — Samsung calls the desktop interface DeX — and a cracked or
 entirely dead panel stops mattering once the picture is on a monitor.
 
 **[Recovering a phone with a broken screen](https://nikolareljin.github.io/android-device-rescue-kit/cracked-screen.html)**
-covers the external-display route step by step, the cheaper mouse-only route
-when part of the display still works, what to buy and where, and the approaches
-that sound like they would work but cannot.
+covers existing cloud and microSD copies, non-Samsung USB-C video, the
+accessibility route when it was already configured, data-preserving temporary
+screen repair, the mouse-only route when part of the display still works, and
+the approaches that sound like they would work but cannot.
 
 ## Helper Dependency
 

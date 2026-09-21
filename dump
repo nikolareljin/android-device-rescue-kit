@@ -9,6 +9,7 @@ Usage:
   ./dump log [destination]
   ./dump data [destination] [--recovery-profile] [--keep-plaintext|--discard-plaintext]
   ./dump photos [destination]
+  ./dump probe
 
 Commands:
   log     Collect Android diagnostic logs and build a triage report.
@@ -20,6 +21,8 @@ Commands:
   photos  Find and copy EVERY photo and video on the device, then verify each
           one against its size on the phone. Exits non-zero and names what is
           missing if even one file could not be copied.
+  probe   Immediately report whether the attached phone has authorised this
+          computer for ADB. It never changes phone settings or waits.
 
 Examples:
   ./dump log
@@ -29,6 +32,7 @@ Examples:
   ./dump data /mnt/android-backups/s22-before-reset --recovery-profile
   ./dump photos
   ./dump photos /mnt/android-backups/s22-photos
+  ./dump probe
 EOF
 }
 
@@ -49,6 +53,9 @@ case "$mode" in
     destination="${1:-backups/$(date +%Y%m%d-%H%M%S)}"
     mkdir -p "$destination"
     "$ROOT/tools/android_photo_backup.sh" "$destination"
+    ;;
+  probe)
+    "$ROOT/tools/android_device_probe.sh"
     ;;
   data)
     # ${1+"$@"} rather than "$@": on bash 3.2, which is what macOS ships,
