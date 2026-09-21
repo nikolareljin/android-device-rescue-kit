@@ -102,14 +102,19 @@ fi
 # non-zero", which a truncated photo passes.
 #
 # The command is therefore built as one properly quoted string.
+# Takes the paths as arguments rather than by nameref: `local -n` needs bash
+# 4.3 and macOS ships 3.2.
 run_batch_stat() {
-  local -n _b="$1"
-  [ "${#_b[@]}" -gt 0 ] || return 0
+  [ "$#" -gt 0 ] || return 0
   local cmd="stat -c '%s|%n'" p
-  for p in "${_b[@]}"; do
+  for p in "$@"; do
     cmd="$cmd $(photo_shell_quote "$p")"
   done
-  adb shell "$cmd" 2>/dev/null | tr -d '\r' >>"$WORK_DIR/sizes.txt"
+  # </dev/null is load-bearing. adb shell reads stdin, and this runs inside a
+  # `while read ... done <index`, so without it adb consumed the rest of the
+  # index after the first batch: 200 of 5,399 sizes were collected and
+  # verification quietly degraded to "the file is non-zero" for the rest.
+  adb shell "$cmd" </dev/null 2>/dev/null | tr -d '\r' >>"$WORK_DIR/sizes.txt"
 }
 
 collect_device_sizes() {
@@ -120,11 +125,13 @@ collect_device_sizes() {
     # 200 paths of ~100 characters is ~20 KB of command line, well inside the
     # device shell's limit.
     if [ "${#batch[@]}" -ge 200 ]; then
-      run_batch_stat batch
+      run_batch_stat "${batch[@]}"
       batch=()
     fi
   done <"$INDEX_FILE"
-  run_batch_stat batch
+  if [ "${#batch[@]}" -gt 0 ]; then
+    run_batch_stat "${batch[@]}"
+  fi
 }
 
 print_info 'Reading sizes from the device...'
@@ -228,7 +235,9 @@ missing=0
 [ -s "$MISSING_FILE" ] && missing=$(wc -l <"$MISSING_FILE" | tr -d ' ')
 verified=$((total - missing))
 
-total_bytes=$(find "$PHOTOS_DIR" -type f -exec wc -c {} + 2>/dev/null | tail -1 | tr -dc '0-9')
+# Sum every "total" line: find -exec ... + may run wc more than once, and
+# taking only the last batch under-reported 24.8 GB as 1.4 GB.
+total_bytes=$(find "$PHOTOS_DIR" -type f -exec wc -c {} + 2>/dev/null | awk '/total$/ {s += $1} END {printf "%d", s}')
 
 {
   printf 'Photo and video backup\n\n'

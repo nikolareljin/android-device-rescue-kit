@@ -75,6 +75,13 @@ dev_to_local() { printf '%s%s\n' "$DEVICE" "$1"; }
 case "${1:-}" in
   shell)
     shift
+    # Real adb shell reads stdin and forwards it to the device. The mock drains
+    # it for the same reason: a caller that runs adb inside a `while read` loop
+    # without </dev/null loses the rest of its input, which is how sizes were
+    # collected for only the first 200 of 5,399 files on a real phone.
+    # Bounded: a plain `cat` blocks forever when stdin has a writer that never
+    # closes, which hangs the suite instead of failing it.
+    if [ ! -t 0 ]; then timeout 0.2 cat >/dev/null 2>&1 || true; fi
     # Real adb does NOT pass argv through: it joins its arguments with spaces
     # and hands one string to a shell on the device. The mock does the same, so
     # a caller that forgets to quote a path containing a space fails here the
@@ -243,6 +250,38 @@ check "the truncated file was re-copied whole" "camera-one" \
   "$(cat "$BK/photos/storage/emulated/0/DCIM/Camera/IMG_001.jpg" 2>/dev/null)"
 check "resume reported for the untouched files" "1" \
   "$(grep -cE '^Already present \(resumed\) : [1-9]' "$BK/photos_report.txt" | tr -d ' ')"
+
+# --- 4b. more files than one stat batch -----------------------------------
+#
+#     collect_device_sizes batches 200 paths per adb call. adb shell reads
+#     stdin, and the batching loop reads the index from stdin, so without
+#     </dev/null adb swallowed the rest of the index after the first batch:
+#     sizes were collected for 200 files and verification silently degraded to
+#     "the file is non-zero" for every one after that. A fixture smaller than
+#     one batch cannot see it.
+
+build_device
+mkdir -p "$DEVICE/storage/emulated/0/DCIM/Bulk"
+i=0
+while [ "$i" -lt 250 ]; do
+  printf 'bulk-%s' "$i" >"$DEVICE/storage/emulated/0/DCIM/Bulk/img_$i.jpg"
+  i=$((i + 1))
+done
+BK="$WORK/bk_bulk"; mkdir -p "$BK"
+rc=$(run_backup "$BK")
+check "a run spanning several stat batches exits 0" "0" "$rc"
+check "every file got a device size" "$(index_count "$BK")" \
+  "$(wc -l <"$BK/.photo_work/sizes.txt" | tr -d ' ')"
+# A file well past the first batch must be size-verified, not merely present.
+printf 'x' >"$BK/photos/storage/emulated/0/DCIM/Bulk/img_240.jpg"
+rc=$(run_backup "$BK")
+check "a truncated file past batch 1 is repaired" "bulk-240" \
+  "$(cat "$BK/photos/storage/emulated/0/DCIM/Bulk/img_240.jpg" 2>/dev/null)"
+# Compared against the real on-disk sum rather than a threshold: taking only
+# the last wc batch reported 24.8 GB as 1.4 GB on a real run.
+check "byte total equals the actual bytes on disk" \
+  "$(find "$BK/photos" -type f -exec wc -c {} + | awk '/total$/ {s += $1} END {printf "%d", s}')" \
+  "$(awk '/^Bytes on disk/ {print $NF}' "$BK/photos_report.txt")"
 
 # --- 5. a device with no photos is not an error ---------------------------
 

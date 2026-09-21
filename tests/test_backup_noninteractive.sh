@@ -73,6 +73,13 @@ case "${1:-}" in
     ;;
   shell)
     shift
+    # Real adb shell reads stdin and forwards it to the device. The mock drains
+    # it for the same reason: a caller that runs adb inside a `while read` loop
+    # without </dev/null loses the rest of its input, which is how sizes were
+    # collected for only the first 200 of 5,399 files on a real phone.
+    # Bounded: a plain `cat` blocks forever when stdin has a writer that never
+    # closes, which hangs the suite instead of failing it.
+    if [ ! -t 0 ]; then timeout 0.2 cat >/dev/null 2>&1 || true; fi
     cmd="$*"
     case "$cmd" in
       "test -e "*)
