@@ -11,6 +11,7 @@
 #   4  uncommitted changes, refused
 #   5  remote unreachable
 #   6  no release tags found
+#   7  the new release is checked out, but a post-update step failed
 set -euo pipefail
 
 # Run from a copy outside the tree before touching git. Bash reads a script
@@ -178,11 +179,31 @@ fi
 git -C "$ROOT" checkout --detach --quiet "refs/tags/$latest"
 
 # From the new tree: a release may add a dependency or a launcher.
+#
+# Neither step may abort this script through `set -e`. The checkout has already
+# happened, so dying here leaves the new release installed with stale launchers,
+# no "Updated" line, and an exit code outside the contract above. Relinking in
+# particular must still run when dependency installation fails, because that is
+# what points ~/.local/bin at the new tree.
+post_update_failed=0
+
 if [ -x "$ROOT/scripts/bootstrap.sh" ]; then
-  bash "$ROOT/scripts/bootstrap.sh"
+  bash "$ROOT/scripts/bootstrap.sh" || {
+    post_update_failed=1
+    printf 'Installing host dependencies failed.\n' >&2
+  }
 fi
 if [ -x "$ROOT/scripts/link_launchers.sh" ]; then
-  bash "$ROOT/scripts/link_launchers.sh" "$ROOT" "$BIN_DIRECTORY"
+  bash "$ROOT/scripts/link_launchers.sh" "$ROOT" "$BIN_DIRECTORY" || {
+    post_update_failed=1
+    printf 'Updating the launchers in %s failed.\n' "$BIN_DIRECTORY" >&2
+  }
 fi
 
 printf 'Updated %s -> %s\n' "$current" "$latest"
+
+if [ "$post_update_failed" -eq 1 ]; then
+  printf '\n%s is installed, but a step after the update did not finish.\n' "$latest" >&2
+  printf 'The toolkit may be missing a dependency. Run: adrescue bootstrap\n' >&2
+  exit 7
+fi

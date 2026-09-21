@@ -317,7 +317,8 @@ release newly requires.
   --ref     Move to a specific release tag instead of the latest.
 
 Exit codes: 0 updated or already current, 1 not a git checkout, 2 usage,
-3 development clone, 4 uncommitted changes, 5 remote unreachable, 6 no releases.
+3 development clone, 4 uncommitted changes, 5 remote unreachable, 6 no
+releases, 7 updated but a post-update step failed.
 EOF
       ;;
     bootstrap)
@@ -376,10 +377,14 @@ attached_serials() {
   adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }'
 }
 
+# Every adb call here is guarded. This script runs under `set -euo pipefail`,
+# and a bare var="$(adb ... | tr ...)" assignment takes the pipeline's status,
+# so one flaky phone would kill the whole command before printing anything.
+# These probes are for display: not knowing the model is not a reason to stop.
 device_label() {
   local serial="$1" model release
-  model="$(adb -s "$serial" shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
-  release="$(adb -s "$serial" shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')"
+  model="$(adb -s "$serial" shell getprop ro.product.model 2>/dev/null | tr -d '\r')" || model=""
+  release="$(adb -s "$serial" shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')" || release=""
   printf '%s  %s  Android %s' "$serial" "${model:-unknown model}" "${release:-unknown}"
 }
 
@@ -429,7 +434,7 @@ cmd_restore() {
   fi
 
   local serials
-  serials="$(attached_serials)"
+  serials="$(attached_serials)" || serials=""
   count="$(printf '%s' "$serials" | grep -c . || true)"
 
   if [ -z "$serial" ]; then
@@ -455,7 +460,8 @@ cmd_restore() {
   fi
 
   local free_space
-  free_space="$(adb -s "$serial" shell df -h /sdcard 2>/dev/null | tail -1 | awk '{ print $4 }' | tr -d '\r')"
+  free_space="$(adb -s "$serial" shell df -h /sdcard 2>/dev/null | tail -1 | awk '{ print $4 }' | tr -d '\r')" \
+    || free_space=""
 
   printf '\nTarget device\n  %s\n' "$(device_label "$serial")"
   [ -n "$free_space" ] && printf '  free space %s\n' "$free_space"

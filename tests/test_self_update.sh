@@ -35,6 +35,7 @@ seed_commit() {
   cat >"$SEED/scripts/bootstrap.sh" <<EOF
 #!/usr/bin/env bash
 printf 'bootstrap from $version\n' >>"\${ANDROID_RESCUE_TEST_LOG:?}"
+exit "\${ANDROID_RESCUE_FAIL_BOOTSTRAP:-0}"
 EOF
   cat >"$SEED/scripts/link_launchers.sh" <<EOF
 #!/usr/bin/env bash
@@ -199,6 +200,31 @@ out="$(env ANDROID_RESCUE_ROOT="$WORK/plain" ANDROID_RESCUE_INSTALL_DIR="$WORK/p
 rc=$?
 set -e
 [ "$rc" -eq 1 ] || fail "a non-checkout must exit 1, got $rc" "$out"
+pass
+
+# A post-update step that fails must not abort the script: the checkout has
+# already happened, so dying there leaves the new release installed with stale
+# launchers, no "Updated" line, and an exit code outside the contract.
+install_at 0.2.0 "$INSTALL"
+cat >"$WORK/seedfail" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+: >"$WORK/steps.log"
+set +e
+out="$(env ANDROID_RESCUE_ROOT="$INSTALL" ANDROID_RESCUE_INSTALL_DIR="$INSTALL" \
+  ANDROID_RESCUE_REMOTE="$REMOTE" ANDROID_RESCUE_BIN_DIR="$WORK/bin" \
+  ANDROID_RESCUE_UPDATE_SOURCE=tags ANDROID_RESCUE_TEST_LOG="$WORK/steps.log" \
+  ANDROID_RESCUE_FAIL_BOOTSTRAP=1 bash "$SELF_UPDATE" 2>&1)"
+rc=$?
+set -e
+[ "$rc" -eq 7 ] || fail "a failed post-update step must exit 7, got $rc" "$out"
+[ "$(git -C "$INSTALL" describe --tags --exact-match HEAD)" = 0.10.0 ] \
+  || fail 'the new release must still be checked out' "$out"
+grep -Fq 'Updated 0.2.0 -> 0.10.0' <<<"$out" || fail 'it must still say what it did' "$out"
+grep -Fq 'adrescue bootstrap' <<<"$out" || fail 'it must say how to recover' "$out"
+grep -Fq 'link from 0.10.0' "$WORK/steps.log" \
+  || fail 'relinking must still run when the bootstrap fails' "$out"
 pass
 
 # --ref moves to a named release rather than the latest.

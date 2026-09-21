@@ -219,4 +219,37 @@ out="$(PATH="$WORK/bin:$PATH" run "$ADRESCUE" restore "$WORK/backup" --serial ZZ
 grep -Fq 'No attached phone has serial ZZZ' <<<"$out" || fail 'restore names the bad serial' "$out"
 pass
 
+# A missing option value must not loop. `shift 2` with one argument left shifts
+# nothing and returns non-zero, which once spun forever.
+set +e
+out="$(PATH="$WORK/bin:$PATH" timeout 10 "$ADRESCUE" restore "$WORK/backup" --serial 2>&1)"
+rc=$?
+set -e
+[ "$rc" -eq 124 ] && fail 'restore --serial with no value hangs' "$out"
+[ "$rc" -eq 2 ] || fail "restore --serial with no value must exit 2, got $rc" "$out"
+pass
+
+# One flaky adb probe must not kill the command. adrescue runs under
+# set -euo pipefail, so a bare var="$(adb ... | tr ...)" assignment takes the
+# pipeline's status and used to exit silently, printing nothing at all.
+cat >"$WORK/bin/adb" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = devices ]; then printf 'List of devices attached
+AAA	device
+'; exit 0; fi
+case "$*" in
+  *ro.product.model*) printf 'SM-S911B
+'; exit 0 ;;
+  *df*) printf 'error: device offline
+' >&2; exit 1 ;;
+  *) printf 'stub
+'; exit 0 ;;
+esac
+EOF
+chmod +x "$WORK/bin/adb"
+out="$(PATH="$WORK/bin:$PATH" run "$ADRESCUE" restore "$WORK/backup" --serial AAA --yes)"   || fail 'restore must survive a failing adb probe' "$out"
+grep -Fq 'SM-S911B' <<<"$out" || fail 'restore still names the device' "$out"
+grep -Fq 'android_restore_dialog' <<<"$out" || fail 'restore still reaches the tool' "$out"
+pass
+
 printf 'adrescue_dispatch: %s checks passed\n' "$checks"
