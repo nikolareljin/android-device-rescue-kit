@@ -62,6 +62,10 @@ ENCRYPT_PROFILE=1
 INTERACTIVE=1
 SELECTION=""
 CREDENTIAL_EXPORTS=()
+# Packages to open for an owner-run export. Empty means ask (interactive) or
+# open nothing (unattended).
+OPEN_MANAGERS=()
+LIST_MANAGERS=0
 BACKUP_DESTINATION=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -72,6 +76,8 @@ while [ "$#" -gt 0 ]; do
     --non-interactive) INTERACTIVE=0 ;;
     --select) SELECTION="${2:-}"; shift ;;
     --credential-export) CREDENTIAL_EXPORTS+=("${2:-}"); shift ;;
+    --open-manager) OPEN_MANAGERS+=("${2:-}"); shift ;;
+    --list-managers) LIST_MANAGERS=1 ;;
     -h|--help)
       # Name the command the user actually types, not this script's path.
       cat <<USAGE
@@ -90,6 +96,12 @@ Usage: ${ANDROID_RESCUE_CMD:-./dump data} [destination] [options]
                               music, app_inventory, recovery_profile, adb_backup
   --credential-export PATH    Device path of an exported credential file.
                               Repeatable. Implies no prompting for them.
+  --open-manager PACKAGE      Open this password manager on the phone so its own
+                              export can be run. Repeatable. Without it the
+                              interactive run offers a list and an unattended one
+                              opens nothing.
+  --list-managers             Print the managers installed on the attached phone
+                              and exit.
 USAGE
       exit 0 ;;
     --*) print_error "Unknown option: $1"; exit 1 ;;
@@ -100,6 +112,32 @@ done
 RECOVERY_PROFILE_DEFAULT="off"
 if [ "$RECOVERY_PROFILE" -eq 1 ]; then
   RECOVERY_PROFILE_DEFAULT="on"
+fi
+
+# --list-managers: what is actually installed, so --open-manager has something
+# real to name. Queries the phone directly rather than a captured profile,
+# because it runs before any backup.
+if [ "$LIST_MANAGERS" -eq 1 ]; then
+  RECOVERY_APPS_FILE="${RECOVERY_APPS_FILE:-$ANDROID_RESCUE_ROOT/config/recovery_apps.txt}"
+  installed="$(adb shell cmd package list packages 2>/dev/null | tr -d '\r')"
+  if [ -z "$installed" ]; then
+    print_error "No device, or the package list could not be read."
+    exit 1
+  fi
+  found=0
+  printf 'Password managers and authenticators on this device:\n\n'
+  while IFS='|' read -r pkg name hint; do
+    case "$pkg" in ''|\#*) continue ;; esac
+    printf '%s\n' "$installed" | grep -Fxq "package:$pkg" || continue
+    found=$((found + 1))
+    printf '  %s\n      %s\n      %s\n\n' "$name" "$pkg" "$hint"
+  done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$RECOVERY_APPS_FILE" 2>/dev/null)
+  if [ "$found" -eq 0 ]; then
+    printf '  none recognised. config/recovery_apps.txt lists what is known.\n'
+  else
+    printf 'Open one with:  --open-manager <package>\n'
+  fi
+  exit 0
 fi
 
 select_backup_root() {
@@ -258,6 +296,94 @@ backup_snapchat() {
     "If you downloaded a Snapchat My Data archive to Downloads, also select Downloads in this backup workflow."
 }
 
+# Offer the detected managers and open the chosen ones, one at a time, so the
+# owner can run each app's own export.
+#
+# Nothing is opened unless it was asked for: --open-manager names a package
+# when unattended, and the interactive path shows a checklist of what is
+# actually installed rather than assuming.
+# Open one detected app, by whichever route it actually has.
+#
+# `monkey -p` only works for an app with a LAUNCHER activity. Samsung Pass has
+# none -- it is reached through Settings -- so on the first phone this was run
+# against, monkey failed and the tool reported "could not open" for an app that
+# was never openable that way. An app with no launcher gets its configured
+# launch spec, and one with neither is said so plainly rather than retried.
+launch_app() {
+  local i="$1"
+  local pkg="${DETECTED_APPS[$i]}" name="${DETECTED_NAMES[$i]}" launch="${DETECTED_LAUNCH[$i]}"
+
+  if [ -n "$launch" ]; then
+    # shellcheck disable=SC2086  # the spec is a word list from config
+    if adb shell am start $launch >/dev/null 2>&1; then
+      log_manifest "OPENED $pkg via $launch"
+      return 0
+    fi
+    print_warning "Could not open $name; follow the steps in recovery_actions.txt."
+    log_manifest "FAILED to open $pkg via $launch"
+    return 1
+  fi
+
+  if ! adb shell "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $pkg" 2>/dev/null | tr -d '\r' | grep -q "^$pkg/"; then
+    print_warning "$name has no launcher screen; follow the steps in recovery_actions.txt."
+    log_manifest "NOT LAUNCHABLE $pkg (no launcher activity, no launch spec)"
+    return 1
+  fi
+
+  if adb shell monkey -p "$pkg" 1 >/dev/null 2>&1; then
+    log_manifest "OPENED $pkg for owner export"
+    return 0
+  fi
+  print_warning "Could not open $name; follow the steps in recovery_actions.txt."
+  log_manifest "FAILED to open $pkg"
+  return 1
+}
+
+open_recovery_apps() {
+  [ "${#DETECTED_APPS[@]}" -gt 0 ] || {
+    log_manifest "SKIPPED opening recovery apps: none detected"
+    return 0
+  }
+
+  local chosen=() i pkg name
+
+  if [ "${#OPEN_MANAGERS[@]}" -gt 0 ]; then
+    for pkg in "${OPEN_MANAGERS[@]}"; do
+      local found=0
+      for i in "${!DETECTED_APPS[@]}"; do
+        [ "${DETECTED_APPS[$i]}" = "$pkg" ] && { chosen+=("$i"); found=1; break; }
+      done
+      [ "$found" -eq 1 ] || print_warning "--open-manager $pkg is not installed on this device; skipping."
+    done
+  elif [ "$INTERACTIVE" -eq 0 ]; then
+    log_manifest "SKIPPED opening recovery apps: unattended and no --open-manager given"
+    return 0
+  else
+    local args=()
+    for i in "${!DETECTED_APPS[@]}"; do
+      args+=("$i" "${DETECTED_NAMES[$i]}" off)
+    done
+    local picked
+    picked=$(dialog --stdout --separate-output \
+      --title "Open A Password Manager" \
+      --checklist "Choose which to open on the phone so you can run its own export. Nothing is opened unless you pick it, and this tool never enters a secret or approves a prompt." \
+      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" "${args[@]}") || picked=""
+    for i in $picked; do chosen+=("$i"); done
+  fi
+
+  if [ "${#chosen[@]}" -eq 0 ]; then
+    log_manifest "SKIPPED opening recovery apps: none selected"
+    return 0
+  fi
+
+  for i in "${chosen[@]}"; do
+    pkg="${DETECTED_APPS[$i]}"
+    name="${DETECTED_NAMES[$i]}"
+    launch_app "$i" || true
+    ui_msg "$name" "Complete the export in $name on the phone, then return here.\n\n${DETECTED_HINTS[$i]}\n\nThis tool will not enter secrets or approve prompts."
+  done
+}
+
 collect_recovery_profile() {
   local profile_root="$BACKUP_ROOT/recovery_profile" export_path imported_path passphrase confirmation
   mkdir -p "$profile_root/imports" "$profile_root/root_system"
@@ -291,16 +417,35 @@ collect_recovery_profile() {
   capture_text recovery_profile/apps.txt adb shell cmd package list packages
   mv "$BACKUP_ROOT/device/recovery_profile/"* "$profile_root/"
   find "$profile_root" -maxdepth 1 -type f -exec chmod 600 {} +
-  printf "%s\n" "Android recovery actions" "" "Use each providers own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
-  # adb commonly allocates a PTY and returns CRLF, so `grep -Fx "package:x"`
-  # never matched "package:x\r" and the guidance below was silently skipped.
+  printf "%s\n" "Android recovery actions" "" "Use each provider's own export or transfer flow. This tool never bypasses screen locks, app protections, or security prompts." "" >"$profile_root/recovery_actions.txt"
+  # Some adb and device combinations allocate a PTY and return CRLF, which a
+  # `grep -Fx "package:x"` would never match. Stripping CR costs nothing and
+  # removes the difference between those devices and the rest.
   has_package() { tr -d '\r' < "$profile_root/apps.txt" | grep -Fxq "package:$1"; }
-  if has_package com.android.chrome; then
-    printf "%s\n" "Chrome / Google Password Manager: complete the owner-approved password export on the unlocked phone, then provide its exact path." >>"$profile_root/recovery_actions.txt"
+
+  # The known managers come from config/recovery_apps.txt rather than being
+  # written out here. They used to be a hardcoded list repeated three times,
+  # which is why Samsung Pass -- installed on the first phone this was run
+  # against -- was missing from all three.
+  RECOVERY_APPS_FILE="${RECOVERY_APPS_FILE:-$ANDROID_RESCUE_ROOT/config/recovery_apps.txt}"
+  DETECTED_APPS=()
+  DETECTED_NAMES=()
+  DETECTED_HINTS=()
+  DETECTED_LAUNCH=()
+  while IFS='|' read -r pkg name hint launch; do
+    case "$pkg" in ''|\#*) continue ;; esac
+    has_package "$pkg" || continue
+    DETECTED_APPS+=("$pkg")
+    DETECTED_NAMES+=("$name")
+    DETECTED_HINTS+=("$hint")
+    DETECTED_LAUNCH+=("${launch:-}")
+    printf '%s\n  %s\n' "$name ($pkg)" "$hint" >>"$profile_root/recovery_actions.txt"
+  done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$RECOVERY_APPS_FILE" 2>/dev/null)
+
+  if [ "${#DETECTED_APPS[@]}" -eq 0 ]; then
+    printf '%s\n' "No known password manager or authenticator was detected on this device." >>"$profile_root/recovery_actions.txt"
   fi
-  for app in com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-    if has_package "$app"; then printf "%s\n" "$app: use its official export, backup, or transfer workflow before wiping." >>"$profile_root/recovery_actions.txt"; fi
-  done
+  log_manifest "Recovery apps detected: ${#DETECTED_APPS[@]}"
   chmod 600 "$profile_root/recovery_actions.txt"
   if adb shell "su -c id" >/dev/null 2>&1; then
     ui_yesno "Root-only System Sources" "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." no && {
@@ -317,11 +462,10 @@ collect_recovery_profile() {
   fi
   # Defaults to no unattended: this drives the phone's UI and expects someone
   # standing at it to complete an export.
-  ui_yesno "Open Recovery Apps" "Open detected recovery apps for owner-approved export or transfer? The tool will never enter secrets or approve prompts." no && {
-    for app in com.android.chrome com.bitwarden com.onepassword.android com.lastpass.lpandroid com.dashlane com.google.android.apps.authenticator2 com.azure.authenticator; do
-      if has_package "$app"; then adb shell monkey -p "$app" 1 >/dev/null 2>&1 || print_warning "Could not open $app; follow recovery_actions.txt."; ui_msg "Recovery action" "Complete the export or transfer in $app on the phone, then return here. The tool will not enter secrets or approve prompts."; fi
-    done
-  }
+  # Which manager to open is a choice, not a sweep. A phone commonly has both
+  # Chrome and Samsung Pass, and opening every detected app in turn means
+  # sitting through prompts for ones the owner does not use.
+  open_recovery_apps
   # Several exports, not one.
   #
   # A phone routinely has more than one: the browser's passwords, a password

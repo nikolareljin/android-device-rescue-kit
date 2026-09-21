@@ -101,9 +101,24 @@ case "${1:-}" in
       "dumpsys connectivity"*) printf 'connectivity\n' ;;
       "dumpsys bluetooth_manager"*) printf 'bluetooth\n' ;;
       "dumpsys package"*) printf 'packages\n' ;;
-      "cmd package list packages"*) printf 'package:com.android.chrome\r\npackage:com.bitwarden\r\n' ;;
+      "cmd package list packages"*)
+        # CRLF on purpose: some adb/device combinations return it.
+        printf 'package:com.android.chrome\r\npackage:com.samsung.android.samsungpass\r\npackage:com.azure.authenticator\r\n' ;;
       "getprop"*) printf 'prop\n' ;;
-      monkey*) exit 0 ;;
+      "cmd package resolve-activity"*)
+        # Chrome has a launcher activity; Samsung Pass deliberately does not.
+        case "$cmd" in
+          *com.android.chrome*) printf 'com.android.chrome/com.google.android.apps.chrome.Main\n' ;;
+          *) printf 'No activity found\n' ;;
+        esac
+        exit 0 ;;
+      "am start"*)
+        printf '%s\n' "$cmd" >>"${MOCK_WORK:-/dev/null}/am_calls.txt" 2>/dev/null
+        exit 0 ;;
+      monkey*)
+        # Record which package was opened so the test can assert on it.
+        printf '%s\n' "$cmd" >>"${MOCK_WORK:-/dev/null}/monkey_calls.txt" 2>/dev/null
+        exit 0 ;;
       *) exit 0 ;;
     esac
     exit 0 ;;
@@ -112,7 +127,7 @@ exit 0
 MOCK
 chmod +x "$BIN/adb"
 
-export MOCK_DEVICE="$DEVICE"
+export MOCK_DEVICE="$DEVICE" MOCK_WORK="$WORK"
 export PATH="$BIN:$PATH"
 
 BK="$WORK/backup"
@@ -151,6 +166,83 @@ check "selected category ran" "present" \
   "$([ -d "$BK/shared/Download" ] && echo present || echo absent)"
 check "unselected category did not run" "absent" \
   "$([ -d "$BK/shared/DCIM" ] && echo present || echo absent)"
+
+# --- recovery apps come from config, and Samsung Pass is among them -------
+
+# Matched on the package id: the display name also occurs inside its own hint
+# text, so counting the name alone counts two lines.
+check "detected managers are listed in the guidance" "1" \
+  "$(grep -c 'com.samsung.android.samsungpass' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+check "so is Chrome" "1" \
+  "$(grep -c '(com.android.chrome)' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+check "the export hint travels with it" "1" \
+  "$(grep -c 'Samsung Pass > ⋮ > Settings > Export data' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+check "a manager that is NOT installed is not listed" "0" \
+  "$(grep -c 'Bitwarden' "$BK/recovery_profile/recovery_actions.txt" 2>/dev/null)"
+check "unattended with no --open-manager opens nothing" "absent" \
+  "$([ -s "$WORK/monkey_calls.txt" ] && echo present || echo absent)"
+
+# --- --open-manager opens exactly what was named --------------------------
+
+: >"$WORK/monkey_calls.txt"
+BK3="$WORK/backup3"; mkdir -p "$BK3"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK3" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    --open-manager com.samsung.android.samsungpass \
+    >"$WORK/out3.txt" 2>&1 )
+check "--open-manager run exits 0" "0" "$?"
+# Route-agnostic: which mechanism is right for a given app is asserted below,
+# per route. Here the point is only that the named one, and nothing else, was
+# opened at all.
+check "the named manager was opened" "1" \
+  "$(grep -c 'OPENED com.samsung.android.samsungpass' "$BK3/backup_manifest.txt")"
+check "and nothing else was" "1" \
+  "$(grep -c '^OPENED ' "$BK3/backup_manifest.txt")"
+
+# --- an app with no launcher is opened by its configured spec -------------
+#
+#     Samsung Pass has no LAUNCHER activity -- it lives inside Settings -- so
+#     `monkey -p` can never open it. On the first phone this ran against, that
+#     produced "could not open" for an app that was never openable that way.
+
+: >"$WORK/monkey_calls.txt"; : >"$WORK/am_calls.txt"
+BK5="$WORK/backup5"; mkdir -p "$BK5"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK5" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    --open-manager com.samsung.android.samsungpass \
+    >"$WORK/out5.txt" 2>&1 )
+check "launch-spec app opens via am start" "1" \
+  "$(grep -c 'am start -n com.android.settings' "$WORK/am_calls.txt")"
+check "and not via monkey" "0" "$(wc -l <"$WORK/monkey_calls.txt" | tr -d ' ')"
+check "manifest records the route" "1" \
+  "$(grep -c 'OPENED com.samsung.android.samsungpass via' "$BK5/backup_manifest.txt")"
+check "no false failure is reported" "0" \
+  "$(grep -c 'Could not open' "$WORK/out5.txt")"
+
+# --- an app with a launcher still goes through monkey ---------------------
+
+: >"$WORK/monkey_calls.txt"; : >"$WORK/am_calls.txt"
+BK6="$WORK/backup6"; mkdir -p "$BK6"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK6" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    --open-manager com.android.chrome \
+    >"$WORK/out6.txt" 2>&1 )
+check "launcher app opens via monkey" "1" \
+  "$(grep -c 'monkey -p com.android.chrome' "$WORK/monkey_calls.txt")"
+check "and not via am start" "0" "$(wc -l <"$WORK/am_calls.txt" | tr -d ' ')"
+
+# --- naming something not installed warns, and does not open it -----------
+
+: >"$WORK/monkey_calls.txt"
+BK4="$WORK/backup4"; mkdir -p "$BK4"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK4" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    --open-manager com.bitwarden \
+    >"$WORK/out4.txt" 2>&1 )
+check "a manager that is not installed opens nothing" "0" \
+  "$(wc -l <"$WORK/monkey_calls.txt" | tr -d ' ')"
+check "and says so" "1" \
+  "$(grep -c 'com.bitwarden is not installed' "$WORK/out4.txt")"
 
 # --- a missing --select is refused rather than hanging ---------------------
 

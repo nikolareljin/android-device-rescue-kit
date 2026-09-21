@@ -72,6 +72,25 @@ notes from it and matches nothing else.
 - A completed run now names both paths on screen and in the manifest, instead
   of leaving their existence to be inferred.
 
+### Choosing which password manager to open
+
+- The known managers moved from the source to `config/recovery_apps.txt`, read
+  at run time: package, display name, how its export is reached, and optionally
+  how to open it. They had been a hardcoded list written out three times, which
+  is why **Samsung Pass was in none of them** despite being installed on the
+  first phone this was run against.
+- `--list-managers` prints what the attached phone actually has.
+  `--open-manager PACKAGE` opens one so the owner can run its export; the
+  interactive run offers a checklist of what was detected instead of opening
+  every match in turn.
+- Samsung Pass has no launcher activity — it is reached through Settings — so
+  `monkey -p` could never open it and the tool reported "could not open" for
+  something that was never openable that way. An app may now carry a launch
+  spec, and one with neither a launcher nor a spec is reported as not
+  launchable rather than retried.
+- Authenticators are listed so they are not forgotten, with the fact stated
+  plainly that neither common one can export to a file at all.
+
 ### Running unattended, and without encryption
 
 - `--no-encrypt` writes the recovery profile readable and builds no archive, for

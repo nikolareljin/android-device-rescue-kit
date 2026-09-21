@@ -126,6 +126,19 @@ a machine with no terminal:
   --credential-export /sdcard/Download/passwords.csv
 ```
 
+See what the attached phone actually has, then open the one you use:
+
+```bash
+./dump data --list-managers
+./dump data /mnt/backup --recovery-profile --open-manager com.samsung.android.samsungpass
+```
+
+Known managers live in `config/recovery_apps.txt` — package, display name, how
+its export is reached, and optionally how to open it. Adding a line is all it
+takes to support another one. Samsung Pass has no launcher icon of its own, so
+its line names the Settings screen it lives behind; an app with neither a
+launcher nor a launch spec is reported as such rather than retried.
+
 `--select` is required in this mode. `--credential-export` is repeatable, since
 a phone usually holds more than one export. Anything that needs a person at the
 handset — collecting root-only Wi-Fi records, opening a password manager to
