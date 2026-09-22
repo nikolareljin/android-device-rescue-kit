@@ -26,6 +26,14 @@ on a machine the operator may not own. Native `adb.exe` needs none of it.
   `/mnt/sdcard` are excluded by prefix rather than conversion being switched
   off, because the local destination in `adb pull <device> <local>` does still
   need converting.
+- The site's screenshot section no longer explains how the pictures are made.
+  That belongs in the README, where a contributor looks; a reader deciding
+  whether this tool can save their photos does not need it.
+- A Ko-fi link, in three places that stay out of the way: a collapsed block
+  under the hero that opens only if someone opens it, the footer of both pages,
+  and a badge at the end of the README, plus a `FUNDING.yml` for the
+  repository's Sponsor button. Nothing in the tool itself asks for anything.
+  Someone recovering a failing phone is not an audience to sell to.
 - **`install.ps1` installs native tools through winget**: Git for Windows,
   Android platform tools, ripgrep and GnuPG, then hands over to the same
   installer Linux and macOS use. It refreshes `PATH` in-process, because winget

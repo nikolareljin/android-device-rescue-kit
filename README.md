@@ -248,6 +248,20 @@ This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./adresc
 
 Both helper repositories track their `production` release ref rather than a pinned commit, so a fresh clone picks up the current release of each.
 
+### Screenshots
+
+The images on the documentation site are generated, not captured by hand:
+
+```bash
+scripts/make_screenshots.sh
+```
+
+It builds a synthetic device, runs the real scripts against it under Xvfb, and
+writes `docs/assets/screenshots/`. Nothing from a real phone or a real disk is
+involved, and because it is the program's own output a screenshot cannot
+quietly stop matching what the tool does. Needs `xvfb`, `xterm` and
+ImageMagick.
+
 ### Testing against a real phone
 
 `bash tests/run_all.sh` runs against a mock device and needs no hardware, which
@@ -302,3 +316,9 @@ It is broad enough for backup/restore and performance triage, but still clear th
 ![Clone traffic](https://raw.githubusercontent.com/nikolareljin/stats/main/charts/android-device-rescue-kit.svg)
 
 _Updated daily. Total and unique cloners over the last 14 days._
+
+## Support
+
+This is free, and stays free. If it saved you a phone full of photos:
+
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/nikolareljin)
