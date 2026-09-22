@@ -157,6 +157,21 @@ cmd_config() {
       printf 'data-dir     %s   (%s)\n' "$RESOLVED_DIR" "$RESOLVED_SOURCE"
       resolve_dir work
       printf 'work-dir     %s   (%s)\n' "$RESOLVED_DIR" "$RESOLVED_SOURCE"
+      # Which prompts a run would draw, and why. Printed for the same reason
+      # the directories are: when it is not what someone expected, the reason
+      # is the thing they need, and "dialog is not installed" and "text was
+      # asked for" look identical from the outside.
+      # shellcheck source=tools/lib/ui.sh
+      if [ -r "$ROOT/tools/lib/ui.sh" ] && source "$ROOT/tools/lib/ui.sh" 2>/dev/null; then
+        ui_resolve_backend
+        case "$UI_BACKEND_REASON" in
+          requested)     printf 'ui           %s   (asked for)\n' "$UI_BACKEND" ;;
+          present)       printf 'ui           %s   (installed)\n' "$UI_BACKEND" ;;
+          uninstallable) printf 'ui           %s   (dialog cannot be installed on this platform)\n' "$UI_BACKEND" ;;
+          missing)       printf 'ui           %s   (dialog is missing; commands needing it will refuse)\n' "$UI_BACKEND" ;;
+          *)             printf 'ui           %s\n' "$UI_BACKEND" ;;
+        esac
+      fi
       ;;
     set)
       if [ -z "$key" ] || [ -z "$value" ]; then
@@ -219,6 +234,9 @@ Setup:
   help                       This text.
 
 Options, valid with any command:
+  --ui dialog|text           Full-screen menus, or numbered questions at the
+                             keyboard. Default: dialog where it is installed,
+                             text where it cannot be.
   --data-dir <path>          Where photos and backups are written.
   --work-dir <path>          Where diagnostic captures are written.
 
@@ -499,6 +517,7 @@ cmd_restore() {
 # Pulled out of the argument list wherever they appear, so they work equally in
 # `adrescue --data-dir X photos` and `adrescue photos --data-dir X`.
 ARGS=()
+OPT_UI=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --data-dir)
@@ -513,10 +532,31 @@ while [ "$#" -gt 0 ]; do
       ;;
     --data-dir=*) OPT_DATA_DIR="${1#*=}"; shift ;;
     --work-dir=*) OPT_WORK_DIR="${1#*=}"; shift ;;
+    # Which prompts to draw. dialog is the full-screen menus; text is numbered
+    # questions at the keyboard, which is what runs where dialog cannot be
+    # installed. Validated here rather than passed through, because a typo in
+    # an exported variable would otherwise become the backend's name and every
+    # widget would quietly take the text branch.
+    --ui)
+      OPT_UI="${2:-}"
+      [ -n "$OPT_UI" ] || { printf -- '--ui needs dialog or text.\n' >&2; exit 2; }
+      shift 2
+      ;;
+    --ui=*) OPT_UI="${1#*=}"; shift ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
 set -- ${ARGS+"${ARGS[@]}"}
+
+if [ -n "$OPT_UI" ]; then
+  case "$OPT_UI" in
+    dialog|text) export ANDROID_RESCUE_UI="$OPT_UI" ;;
+    *)
+      printf -- '--ui takes dialog or text, not %s.\n' "$OPT_UI" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 mode="${1:-}"
 [ "$#" -eq 0 ] || shift

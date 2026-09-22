@@ -110,7 +110,7 @@ $env:Path = `
     [Environment]::GetEnvironmentVariable('Path', 'User')
 
 $missing = @()
-foreach ($tool in 'git', 'adb', 'rg', 'gpg') {
+foreach ($tool in 'git', 'adb', 'rg', 'gpg', 'gzip', 'tar') {
     if (-not (Test-Command $tool)) { $missing += $tool }
 }
 
@@ -184,6 +184,34 @@ $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($userPath -split ';' | Where-Object { $_.TrimEnd('\') -eq $shimDir.TrimEnd('\') }).Count -eq 0) {
     [Environment]::SetEnvironmentVariable('Path', "$userPath;$shimDir", 'User')
     Write-Host ("Added {0} to your PATH." -f $shimDir)
+}
+
+# What winget cannot supply, said here rather than discovered mid-rescue.
+#
+# dialog is in MSYS2's msys repository and needs that runtime. Git for Windows
+# ships a fork of it with no package manager, and loading another build of
+# msys-2.0.dll into the same process is not supported, so there is no way to
+# add dialog to this shell. The toolkit uses numbered text prompts instead --
+# the same questions, and the same code underneath.
+#
+# unzip is not shipped either, but Windows itself provides bsdtar as tar.exe,
+# which reads zip. `adrescue log` uses whichever is present.
+Write-Host ''
+Write-Host 'Two tools have no winget package for this shell:'
+Write-Host ''
+Write-Host '  dialog  Full-screen menus. Not installable under Git Bash, so the prompts'
+Write-Host '          are numbered questions instead. Same questions, same result.'
+Write-Host '          Choose explicitly any time with: adrescue --ui dialog|text'
+$bsdtar = $false
+try {
+    $tarVersion = (& tar --version 2>$null | Select-Object -First 1)
+    if ($tarVersion -match 'bsdtar|libarchive') { $bsdtar = $true }
+} catch { $bsdtar = $false }
+if ($bsdtar) {
+    Write-Host '  unzip   Not present; bsdtar reads the bugreport zip in its place.'
+} else {
+    Write-Warning '  unzip is not present and no bsdtar was found. "adrescue log" will skip'
+    Write-Warning '  bugreport extraction, which is where last_kmsg and the tombstones are.'
 }
 
 Write-Host ''

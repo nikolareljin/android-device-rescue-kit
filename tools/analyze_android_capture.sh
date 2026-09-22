@@ -23,32 +23,89 @@ mkdir -p "$WORK_DIR"
   printf 'Generated: %s\n\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
 } >"$REPORT"
 
+# Whatever on this machine can read a zip.
+#
+# Git for Windows ships no unzip and a GNU tar that cannot read zip archives,
+# so on Windows this step used to print "unzip not found" and skip -- and the
+# bugreport is where last_kmsg, the tombstones and the recovery logs are. The
+# report came out smaller with nothing but that one line to say why.
+#
+# Windows itself ships bsdtar as tar.exe, which does read zip. It is chosen by
+# asking the binary, not by its name: `tar` is GNU tar on Linux and inside Git
+# Bash, and bsdtar on macOS and Windows, and only one of those can do this.
+ANDROID_RESCUE_ZIP_READER=""
+zip_reader() {
+  [ -n "$ANDROID_RESCUE_ZIP_READER" ] && { printf '%s\n' "$ANDROID_RESCUE_ZIP_READER"; return 0; }
+  if command -v unzip >/dev/null 2>&1; then
+    ANDROID_RESCUE_ZIP_READER=unzip
+    printf 'unzip\n'
+    return 0
+  fi
+  local candidate
+  for candidate in bsdtar tar /c/Windows/System32/tar.exe /mnt/c/Windows/System32/tar.exe; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    if "$candidate" --version 2>/dev/null | head -1 | grep -qi 'bsdtar\|libarchive'; then
+      ANDROID_RESCUE_ZIP_READER="$candidate"
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# zip_looks_readable <file>: is this actually a zip?
+zip_looks_readable() {
+  local reader="$1" file="$2"
+  case "$reader" in
+    unzip) unzip -t "$file" >/dev/null 2>&1 ;;
+    *)     "$reader" -tf "$file" >/dev/null 2>&1 ;;
+  esac
+}
+
+# zip_extract <reader> <zip> <dest> [pattern ...]
+zip_extract() {
+  local reader="$1" zip_file="$2" dest="$3"
+  shift 3
+  case "$reader" in
+    unzip)
+      unzip -qq -o "$zip_file" ${1+"$@"} -d "$dest" 2>/dev/null || true
+      ;;
+    *)
+      # bsdtar matches the same shell patterns against member names, but takes
+      # the destination with -C and the patterns last.
+      "$reader" -xf "$zip_file" -C "$dest" ${1+"$@"} 2>/dev/null || true
+      ;;
+  esac
+}
+
 extract_bugreport_artifacts() {
   local zip_file="$1"
   local extract_dir="$WORK_DIR/bugreport"
+  local reader
 
   mkdir -p "$extract_dir"
 
-  if ! command -v unzip >/dev/null 2>&1; then
-    printf 'unzip not found; skipping bugreport extraction.\n' >>"$REPORT"
+  if ! reader="$(zip_reader)"; then
+    printf 'No zip reader (unzip or bsdtar); skipping bugreport extraction.\n' >>"$REPORT"
     return
   fi
 
-  unzip -qq -o "$zip_file" \
+  zip_extract "$reader" "$zip_file" "$extract_dir" \
     '*last_kmsg*' \
     '*last_kernel*' \
     '*last_all_history*' \
     '*dumpstate*lastkmsg*' \
     '*recovery*' \
     '*tombstone*' \
-    '*getprop*' \
-    -d "$extract_dir" 2>/dev/null || true
+    '*getprop*'
 
   find "$extract_dir" -type f -name '*.gz' -print | while IFS= read -r gz_file; do
     if gzip -t "$gz_file" >/dev/null 2>&1; then
       gzip -dc "$gz_file" >"${gz_file%.gz}" 2>/dev/null || true
-    elif unzip -t "$gz_file" >/dev/null 2>&1; then
-      unzip -qq -o "$gz_file" -d "${gz_file%.gz}_unzipped" 2>/dev/null || true
+    elif zip_looks_readable "$reader" "$gz_file"; then
+      # Named .gz but actually a zip, which some vendor bugreports do.
+      mkdir -p "${gz_file%.gz}_unzipped"
+      zip_extract "$reader" "$gz_file" "${gz_file%.gz}_unzipped"
     fi
   done
 }

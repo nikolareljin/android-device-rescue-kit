@@ -129,9 +129,19 @@ numbered, answered at the keyboard. Nothing about what gets copied changes.
 
 The fallback is specific to that. On Linux and macOS `dialog` is still
 required, because `scripts/install_deps.sh` installs it there and its absence
-means the install is broken rather than the platform being limited. Set
-`ANDROID_RESCUE_UI=text` to use the plain prompts anywhere regardless, which is
-also how they are tested.
+means the install is broken rather than the platform being limited.
+
+Either mode can be chosen explicitly:
+
+```bash
+adrescue --ui text     # numbered questions at the keyboard
+adrescue --ui dialog   # full-screen menus
+adrescue config        # which mode it would use, and why
+```
+
+`unzip` is not shipped by Git for Windows either. Windows provides bsdtar as
+`tar.exe`, which reads zip, and `adrescue log` uses whichever it finds; with
+neither it says so rather than quietly producing a shorter report.
 
 A switch cannot be passed through `iex`, which takes its command from the
 pipeline and has no parameters of its own. Download the script into a block and

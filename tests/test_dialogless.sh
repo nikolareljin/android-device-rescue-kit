@@ -53,7 +53,11 @@ for tool in bash sh env cat cp mv rm mkdir ls find sed awk grep printf sort \
             date stat wc tr head tail cut basename dirname tar gzip gpg du df \
             chmod touch timeout sleep readlink realpath id tput stty mktemp \
             install xargs diff; do
-  src="$(command -v "$tool" 2>/dev/null)" || continue
+  # type -P, not command -v: command -v prints the name for a shell function or
+  # alias rather than a path, and an exported function shadowing grep made
+  # `ln -s grep` a symlink to itself. The link existed, so the loop looked like
+  # it had worked and every use of grep inside the sandbox failed instead.
+  src="$(type -P "$tool" 2>/dev/null)" || continue
   # An if, not A && B || C: `|| true` after a failed ln would also swallow a
   # failure of the test itself, and this loop is what makes dialog unreachable.
   if [ -n "$src" ]; then

@@ -358,6 +358,52 @@ got="$(unset ANDROID_RESCUE_UI; bash -c '
   ui_backend')"
 if [ "$got" = "text" ]; then pass; else note "with dialog absent the backend was '$got', not text"; fi
 
+# --- the --ui flag ----------------------------------------------------------
+#
+#     An environment variable is not a user interface. --ui is what someone
+#     reads in --help and types, and it is validated at the edge: passed
+#     straight through, a typo would become the backend's name and every widget
+#     would silently take the text branch, because anything that is not
+#     "dialog" is text.
+
+if "$ROOT/adrescue" --help 2>&1 | grep -q -- '--ui'; then
+  pass
+else
+  note "--ui is not in the help output, so nobody will find it"
+fi
+
+"$ROOT/adrescue" --ui nonsense config >/dev/null 2>&1
+if [ "$?" -eq 2 ]; then pass; else note "--ui nonsense was not rejected with exit 2"; fi
+
+if "$ROOT/adrescue" --ui=text config >/dev/null 2>&1; then pass; else note "--ui=text was rejected"; fi
+if "$ROOT/adrescue" --ui dialog config >/dev/null 2>&1; then pass; else note "--ui dialog was rejected"; fi
+
+# Captured first, then matched. Piping straight into grep under `set -o
+# pipefail` returns adrescue's exit 2 for the whole pipeline, so the grep
+# succeeding counts for nothing and the check fails on correct behaviour.
+bare_ui="$("$ROOT/adrescue" --ui 2>&1 || true)"
+if printf '%s' "$bare_ui" | grep -q 'needs dialog or text'; then
+  pass
+else
+  note "--ui with no value did not say what it needs: $bare_ui"
+fi
+
+# The resolved mode is reported, with the reason. Asked-for and
+# not-installed both produce text and are not the same situation.
+got="$("$ROOT/adrescue" --ui text config 2>/dev/null | grep '^ui ')"
+case "$got" in
+  *text*asked\ for*) pass ;;
+  *) note "config did not report the requested ui mode: $got" ;;
+esac
+
+# The flag beats an inherited variable, or --ui would do nothing in the one
+# environment where someone had already set it.
+got="$(ANDROID_RESCUE_UI=dialog "$ROOT/adrescue" --ui text config 2>/dev/null | grep '^ui ')"
+case "$got" in
+  *text*) pass ;;
+  *) note "--ui did not override ANDROID_RESCUE_UI: $got" ;;
+esac
+
 if [ "$failures" -eq 0 ]; then
   printf 'ui_fallback: %s checks passed\n' "$checks"
 else

@@ -57,6 +57,33 @@ asking them.
   `mkdir -p`, so restore can be driven end to end. One copy, shared by both
   suites.
 
+### Windows gets the dependencies it can have, and is told about the rest
+
+- **`adrescue --ui dialog|text`.** The mode is a flag with a place in `--help`,
+  not only an environment variable, and it is validated at the edge: passed
+  through unchecked, a typo would become the backend's name and every widget
+  would silently take the text branch, because anything that is not "dialog" is
+  text. `adrescue config` reports the mode it would use and why -- "asked for",
+  "installed", "cannot be installed here" and "missing" all produce a line, and
+  the last two look identical from the outside without it.
+- **The bugreport is read by whatever the machine has.** `adrescue log`
+  extracted it with `unzip`, which Git for Windows does not ship, and the GNU
+  tar it does ship cannot read a zip. The step printed "unzip not found" and
+  skipped -- and the bugreport is where `last_kmsg`, the tombstones and the
+  recovery logs are, so the report came out smaller with one line to say why.
+  Windows itself provides bsdtar as `tar.exe`, which does read zip, so the
+  reader is now chosen by asking the binary rather than by its name: `tar` is
+  GNU on Linux and inside Git Bash, bsdtar on macOS and Windows.
+- **The installers check the whole set.** `install.ps1` verified `git`, `adb`,
+  `rg` and `gpg` and never looked at `gzip` or `tar`, and `install_deps.sh`
+  named `unzip` on every platform without noticing it is absent on one. Both
+  now separate what must be present from what degrades something specific, and
+  say which. `dialog` has no winget package usable from this shell: it lives in
+  MSYS2's `msys` repository and needs that runtime, Git for Windows ships a
+  fork of it with no package manager, and loading a second build of
+  `msys-2.0.dll` into one process is not supported. That is stated at install
+  time rather than discovered mid-rescue.
+
 #### Found reviewing the above
 
 - **The backend was not decided once, though the comment said it was.** It
