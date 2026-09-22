@@ -16,6 +16,13 @@ notes from it and matches nothing else.
   `ANDROID_RESCUE_TEST_SERIAL`; copy it to `.env`, which is gitignored, and the
   fixtures pick it up. With no `.env` the suite runs exactly as it does in CI,
   against an obviously fake serial.
+- `.env` now does something. `ANDROID_RESCUE_TEST_DEVICE=1` was documented as
+  opting into tests that need a phone, and no test read it: the file promised
+  a capability that did not exist. `tests/test_real_device.sh` is that test.
+  It skips unless opted in, requires a serial so a run cannot reach whichever
+  handset happens to be plugged in, and exports it as `ANDROID_SERIAL` so every
+  adb call underneath targets that phone. It is read-only: it probes and reads
+  state, copies nothing off the phone and writes nothing to it.
 - `tests/test_no_device_identifiers.sh` fails if a tracked file carries
   something serial-shaped, if `.env` is ever tracked, if the ignore rule stops
   working, or if `env.example` disappears. Verified it catches the exact string

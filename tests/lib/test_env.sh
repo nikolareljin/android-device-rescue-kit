@@ -34,7 +34,10 @@ test_env_load() {
             ANDROID_RESCUE_TEST_SERIAL|ANDROID_RESCUE_TEST_MODEL|ANDROID_RESCUE_TEST_DEVICE)
                 # An existing environment variable wins, so a one-off run can
                 # override the file without editing it.
-                if [ -z "$(eval "printf '%s' \"\${$key:-}\"")" ]; then
+                # Indirect expansion rather than eval. The key is already
+                # constrained to the three names above, but eval on a line
+                # read from a file is a habit worth not having.
+                if [ -z "${!key:-}" ]; then
                     export "$key=$value"
                 fi
                 ;;
@@ -50,3 +53,19 @@ test_env_load "$TEST_ENV_ROOT/.env"
 TEST_SERIAL="${ANDROID_RESCUE_TEST_SERIAL:-FAKEPHONE0001}"
 TEST_MODEL="${ANDROID_RESCUE_TEST_MODEL:-Fake Phone}"
 export TEST_SERIAL TEST_MODEL
+
+# Are the tests that need a real handset switched on?
+test_env_wants_device() { [ "${ANDROID_RESCUE_TEST_DEVICE:-0}" = "1" ]; }
+
+# Point every adb call at the configured handset, and nothing else. ANDROID_SERIAL
+# is adb's own variable, so this reaches the tools without any of them knowing
+# about .env -- and it matters: `adb shell` with two phones attached fails
+# outright, and with one other phone attached it would talk to the wrong one.
+#
+# Only in device mode. Exporting it while the mock is in use would pin a serial
+# the mock does not report.
+test_env_target_device() {
+    test_env_wants_device || return 0
+    [ -n "${ANDROID_RESCUE_TEST_SERIAL:-}" ] || return 0
+    export ANDROID_SERIAL="$ANDROID_RESCUE_TEST_SERIAL"
+}

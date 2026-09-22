@@ -248,6 +248,27 @@ This repository also expects `ci-helpers` at `scripts/ci-helpers`. Run `./adresc
 
 Both helper repositories track their `production` release ref rather than a pinned commit, so a fresh clone picks up the current release of each.
 
+### Testing against a real phone
+
+`bash tests/run_all.sh` runs against a mock device and needs no hardware, which
+is how CI runs it and why it proves nothing about a real handset. To also
+exercise one:
+
+```bash
+cp env.example .env
+# ANDROID_RESCUE_TEST_DEVICE=1
+# ANDROID_RESCUE_TEST_SERIAL=<what `adb devices` prints>
+```
+
+`.env` is gitignored. A serial identifies one specific phone and this
+repository is public, so no real one is written into the code; the fixtures use
+an obviously fake value unless `.env` says otherwise.
+
+The serial becomes `ANDROID_SERIAL` for the run, so every `adb` call targets
+that handset rather than whichever phone happens to be plugged in.
+`tests/test_real_device.sh` is read-only: it probes and reads state, copies
+nothing off the phone and writes nothing to it.
+
 ## Privacy Rule
 
 Do not commit raw captures. Treat all bugreports, logcats, dumpsys output, kernel logs, tombstones, and extracted archives as private unless they have been reviewed and redacted.
