@@ -119,15 +119,15 @@ adrescue probe
 
 Plug the phone in with USB debugging enabled. Nothing else is required.
 
-### What runs natively, and what does not
+### What runs natively
 
-`probe`, `photos`, `log`, `prompt`, `verify`, `config` and `update` run under
-Git Bash exactly as they do on Linux.
+Every command does, `data` and `restore` included.
 
-`data` and `restore` do not. Both are built on `dialog`, and Git for Windows
-ships a trimmed MSYS2 userland with no package manager to install it with. Run
-those two through WSL, below. Attempting them under Git Bash says so and stops
-rather than failing part-way through a copy.
+Both are built on `dialog`, which Git for Windows has no package manager to
+install. Rather than requiring it, the prompts fall back to plain text: the
+same questions, numbered, answered at the keyboard. Nothing about what gets
+copied changes, and `ANDROID_RESCUE_UI=text` selects the plain prompts
+anywhere, which is also how they are tested.
 
 A switch cannot be passed through `iex`, which takes its command from the
 pipeline and has no parameters of its own. Download the script into a block and

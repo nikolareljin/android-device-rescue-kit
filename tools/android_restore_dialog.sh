@@ -4,14 +4,16 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=tools/lib/ui.sh
+source "$SCRIPT_DIR/lib/ui.sh"
 
 BACKUP_ROOT="${1:-}"
 
 require_tool adb || exit 1
-require_dialog || exit 1
-MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
-MESSAGE_WIDTH=$((DIALOG_WIDTH < 78 ? DIALOG_WIDTH : 78))
-LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
+# Not a dialog check. This used to be `require_dialog || exit 1`, which made
+# restore the one command with no path at all on a machine without dialog --
+# Git Bash on Windows being the case that matters.
+ui_init
 
 if [ -z "$BACKUP_ROOT" ] || [ ! -d "$BACKUP_ROOT/shared" ]; then
   printf 'Usage: %s <backup-directory>\n' "${ANDROID_RESCUE_CMD:-tools/android_restore_dialog.sh}" >&2
@@ -37,10 +39,9 @@ push_if_present() {
 adb start-server
 require_device || exit 1
 
-CHOICES=$(dialog --stdout --separate-output \
-  --title "Android Restore" \
-  --checklist "Select shared-storage data to restore. Install/sign in to apps separately for private app data." \
-  "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" \
+CHOICES=$(ui_checklist \
+  "Android Restore" \
+  "Select shared-storage data to restore. Install/sign in to apps separately for private app data." \
   photos "Camera photos and videos" on \
   downloads "Downloads and documents" on \
   whatsapp "WhatsApp visible media/shared backup folders" on \
@@ -96,5 +97,5 @@ for choice in $CHOICES; do
   esac
 done
 
-dialog --title "Restore Complete" --msgbox "Shared-storage restore finished.\n\nNow open apps such as WhatsApp, Snapchat, Signal, and authenticators and complete their official restore or sign-in flows." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
+ui_msgbox "Restore Complete" "Shared-storage restore finished.\n\nNow open apps such as WhatsApp, Snapchat, Signal, and authenticators and complete their official restore or sign-in flows."
 print_success "Restore complete from: $BACKUP_ROOT"

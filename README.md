@@ -48,9 +48,9 @@ adrescue --help
 ```
 
 On Windows, run `install.ps1` from PowerShell instead: it installs the
-dependencies through winget and needs no WSL and no USB passthrough. `data` and
-`restore` are the exception and still want WSL, because they are built on
-`dialog`, which Git for Windows has no way to install.
+dependencies through winget and needs no WSL and no USB passthrough. Every
+command runs there, including `data` and `restore`: where `dialog` is missing
+the prompts fall back to plain text.
 
 That, USB passthrough, choosing where rescued data is written, and repairing a
 broken installation are in [Installation](docs/installation.md).

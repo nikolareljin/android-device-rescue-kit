@@ -3,6 +3,60 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.9.0
+
+### Every prompt works without dialog
+
+`restore` had no path that did not go through `dialog`. On Git Bash for
+Windows, which ships a trimmed MSYS2 userland with no package manager to
+install it with, the command could not run in any form. `data` was the same
+unless `--non-interactive` was passed, which answers the questions rather than
+asking them.
+
+- **A UI layer, `tools/lib/ui.sh`, with two backends.** `dialog` when it is
+  there, plain numbered prompts when it is not, chosen once per run. Six
+  widgets: message, yes/no, menu, radio list, check list, input and passphrase.
+  `ANDROID_RESCUE_UI=text` forces the plain prompts anywhere, which is how they
+  are tested on a machine that has dialog installed.
+- It keeps dialog's contract exactly, because every caller was written against
+  it: the answer on stdout and nothing else, prompts on stderr, non-zero for
+  cancel. A fallback that printed its menu to stdout would put the menu into
+  the caller's variable, and the caller would act on a string that happens to
+  contain the right word somewhere.
+- **A passphrase prompt restores terminal echo through a trap**, not only on
+  the way out. Ctrl-C at that prompt otherwise leaves echo off and the next
+  command the user types is invisible.
+- **Cancelling and selecting nothing stay distinct.** Both leave the phone
+  untouched, but one is an error and the other is a finished run, and a restore
+  must never write because a menu was misread.
+- `require_dialog` is gone. It was added in 0.8.0 to explain the limit; there
+  is no longer a limit to explain, and a gate left in place is a gate something
+  can call again.
+- **The test suite runs the flows with `dialog` absent from `PATH`**, not
+  stubbed: `PATH` is rebuilt from a directory holding the mock adb and named
+  symlinks, so a dialog installed on the machine cannot be reached. A stub that
+  exits non-zero proves something weaker, since a flow could be branching on
+  its failure rather than never calling it. The flows are then run again
+  against a dialog stub that answers, so the fallback cannot quietly become the
+  only path that works.
+- The fake adb moves to `tests/lib/mock_adb.sh` and gains `push` and device-side
+  `mkdir -p`, so restore can be driven end to end. One copy, shared by both
+  suites.
+
+#### Found while building it
+
+- **A wrapper that called itself.** `android_backup_dialog.sh` defined its own
+  `ui_yesno`, and pointing its body at the library gave it the same name as the
+  function it was calling. bash answers unbounded recursion with SIGSEGV, so
+  the run died with exit 139 and no message. Non-interactive handling moved
+  into the library and the wrapper is gone.
+- **A guard that could not match the thing it guarded.** The check for a
+  `dialog` widget called outside the UI layer was anchored on
+  `dialog --<widget>`. Every real call site in this repository is written
+  `dialog --stdout --separate-output --checklist`, with flags first, so the
+  pattern matched none of them: the call was reintroduced on purpose and the
+  check still passed.
+
 ## 2026-09-22 — v0.8.0
 
 ### Windows runs the toolkit natively, without WSL

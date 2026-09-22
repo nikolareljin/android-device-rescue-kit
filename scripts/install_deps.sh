@@ -35,7 +35,7 @@ case "$(get_os)" in
       exit 1
     fi
     command -v dialog >/dev/null 2>&1 \
-      || print_warning "dialog is not available under Git Bash: 'data' and 'restore' need WSL. Everything else runs here."
+      || print_info "dialog is not available under Git Bash. Every command still runs; the prompts are plain text instead of a curses menu."
     ;;
   *)
     print_error "Unsupported OS. Install adb, dialog, ripgrep, unzip, and gzip manually."
