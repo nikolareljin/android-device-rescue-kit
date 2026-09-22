@@ -3,6 +3,38 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.8.0
+
+### Windows runs the same toolkit, without WSL
+
+Deciding ADR: Windows uses the bash that Git for Windows already ships, against
+native Android platform tools. WSL 2 is a virtual machine and its `adb` cannot
+see a USB device without `usbipd-win` and a per-session attach from an elevated
+prompt. That is setup performed under time pressure, before a rescue can start,
+on a machine the operator may not own. Native `adb.exe` needs none of it.
+
+- **A Windows clone could not run at all.** There was no `.gitattributes`, and
+  Git for Windows defaults to `core.autocrlf=true`, so every script arrived
+  with CRLF and bash answered `/usr/bin/env: 'bash\r': No such file or
+  directory` on the first command typed. Nothing in that message says "line
+  endings". Shell files are pinned to LF, `install.ps1` to CRLF.
+- **Device paths survive MSYS argument conversion.** Git Bash rewrites
+  POSIX-looking arguments into Windows paths before a native `.exe` sees them,
+  so `adb shell ls /sdcard` arrived at the phone as
+  `ls C:/Program Files/Git/sdcard` and the phone answered "no such file" for a
+  folder that is plainly there. `/sdcard`, `/storage`, `/data`, `/system` and
+  `/mnt/sdcard` are excluded by prefix rather than conversion being switched
+  off, because the local destination in `adb pull <device> <local>` does still
+  need converting.
+- **`install.ps1` installs native tools through winget**: Git for Windows,
+  Android platform tools, ripgrep and GnuPG, then hands over to the same
+  installer Linux and macOS use. It refreshes `PATH` in-process, because winget
+  updates it for new processes only and the first install otherwise reports
+  every tool missing that it just installed. It writes a `.cmd` shim so
+  `adrescue` works from PowerShell as well as from Git Bash. `-DryRun` changes
+  nothing; `-UseWsl` keeps the old path for anyone who wants it, and says what
+  usbipd-win will cost them.
+
 ## 2026-09-22 — v0.7.1
 
 ### No device identifiers in the repository

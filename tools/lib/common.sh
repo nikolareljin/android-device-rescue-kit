@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 
 ANDROID_RESCUE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# Git Bash on Windows runs on the MSYS2 runtime, which rewrites arguments that
+# look like POSIX paths into Windows ones before a native .exe sees them. adb
+# is a native .exe, so `adb shell ls /sdcard` reaches the phone as
+# `ls C:/Program Files/Git/sdcard`. The phone answers "no such file" and it
+# reads as a device fault rather than a tooling one.
+#
+# Excluded by prefix, not disabled outright. Blanket MSYS_NO_PATHCONV would
+# also stop the conversion of the local destination in
+# `adb pull /sdcard/DCIM/x.jpg /c/Users/me/backup`, which native adb does need
+# as a Windows path. Only the device side must survive untouched.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ANDROID_RESCUE_DEVICE_PATHS='/sdcard;/storage;/data;/system;/mnt/sdcard'
+    if [ -n "${MSYS2_ARG_CONV_EXCL:-}" ]; then
+      export MSYS2_ARG_CONV_EXCL="$MSYS2_ARG_CONV_EXCL;$ANDROID_RESCUE_DEVICE_PATHS"
+    else
+      export MSYS2_ARG_CONV_EXCL="$ANDROID_RESCUE_DEVICE_PATHS"
+    fi
+    ;;
+esac
 SCRIPT_HELPERS_DIR="${SCRIPT_HELPERS_DIR:-$ANDROID_RESCUE_ROOT/scripts/script-helpers}"
 # Exported so a script that sources this file can tell whether the real helper
 # library loaded or the fallback definitions below are in use.

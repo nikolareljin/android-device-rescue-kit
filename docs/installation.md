@@ -97,38 +97,62 @@ Inside a git clone the defaults are instead `captures/`, `backups/` and
 
 ## Windows
 
-Windows is supported through WSL 2, which supplies the Bash and terminal tools
-used by the interactive backup and restore workflows. In an elevated PowerShell
-window, install WSL if necessary:
+Windows runs the same toolkit, under the bash that Git for Windows provides,
+against native Android platform tools. There is no virtual machine and no USB
+passthrough: `adb` talks to the phone directly, exactly as it does on Linux.
 
-```powershell
-wsl --install -d Ubuntu
-```
-
-Complete the Linux first-run setup, then run this one line in PowerShell:
+In PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1 | iex
 ```
 
-Run the commands through a Linux shell. Use `/mnt/c/...` for a Windows drive:
+It installs Git for Windows, Android platform tools, ripgrep and GnuPG through
+`winget`, then hands over to the same installer Linux and macOS use. Open a new
+PowerShell window afterwards, because `winget` updates `PATH` for new processes
+only. Then:
 
 ```powershell
-wsl bash -lc '~/.local/bin/adrescue --help'
-wsl bash -lc '~/.local/bin/adrescue probe'
-wsl bash -lc '~/.local/bin/adrescue data /mnt/c/AndroidBackups/phone-before-reset'
+adrescue --help
+adrescue probe
 ```
 
-Inside a WSL shell it is just `adrescue probe`. The PowerShell examples use the
-full path because it works whichever startup file the installer chose.
+Plug the phone in with USB debugging enabled. Nothing else is required.
 
-### Connect an Android phone from WSL
+`-DryRun` reports what it would install and changes nothing.
 
-WSL 2 needs USB passthrough before its `adb` can see a phone connected by USB.
-Install `usbipd-win`, then in an elevated PowerShell window run `usbipd list`,
-bind the phone with `usbipd bind --busid <BUSID>`, and attach it with
-`usbipd attach --wsl --busid <BUSID>`. In WSL, verify the phone with
-`adrescue probe` before starting a backup.
+### Paths on Windows
+
+Git Bash addresses drives as `/c/Users/...`, not `/mnt/c/...`:
+
+```powershell
+adrescue photos /c/Users/you/android-rescue/photos
+```
+
+Device paths such as `/sdcard/DCIM` are passed through untouched. The MSYS
+runtime would otherwise rewrite them into Windows paths before `adb` saw them,
+and the phone would answer "no such file" for a folder that is plainly there.
+
+### The WSL fallback
+
+WSL is still supported for a machine that already runs everything there:
+
+```powershell
+irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1 | iex -UseWsl
+```
+
+Know what it costs before choosing it. WSL 2 is a virtual machine and its `adb`
+cannot see a USB device on its own. You need `usbipd-win` installed separately,
+and then, from an elevated PowerShell window, once per session and again after
+every reconnect:
+
+```powershell
+usbipd list
+usbipd bind --busid <BUSID>
+usbipd attach --wsl --busid <BUSID>
+```
+
+That is why the native path is the default.
 
 ## Upgrading
 

@@ -1,0 +1,48 @@
+# Git for Windows defaults to core.autocrlf=true, which rewrites checked-out
+# files to CRLF. Every script here has a `#!/usr/bin/env bash` shebang, and
+# bash reads the carriage return as part of the interpreter path:
+#
+#   ./adrescue: /usr/bin/env: 'bash\r': No such file or directory
+#
+# or, inside a script, `$'\r': command not found` on the first line. Nothing
+# about that says "line endings", and it happens on every Windows clone.
+#
+# LF is forced rather than left to the checkout setting, because the file has
+# to be correct on disk for bash, not just in the repository.
+
+# Text that a shell, or a phone, has to read literally.
+*.sh            text eol=lf
+*.bash          text eol=lf
+.githooks/*     text eol=lf
+*.txt           text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+
+# The extensionless entrypoints. These are the ones that strand a Windows user
+# at the very first command.
+adrescue        text eol=lf
+dump            text eol=lf
+dump.sh         text eol=lf
+prompt          text eol=lf
+update          text eol=lf
+install.sh      text eol=lf
+VERSION         text eol=lf
+env.example     text eol=lf
+
+# PowerShell is the exception: it is read by Windows tools, which expect CRLF.
+*.ps1           text eol=crlf
+
+# Never touched.
+*.png           binary
+*.jpg           binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.gpg           binary
+*.zip           binary
+*.gz            binary
