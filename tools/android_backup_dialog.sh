@@ -414,6 +414,29 @@ open_recovery_apps() {
   done
 }
 
+# Declining the passphrase is a choice, not a failure -- as long as there is
+# nothing in the profile that needs an archive to stay secret.
+#
+# With no credential exports the profile holds settings, Wi-Fi records and an
+# app list, already written 0600 inside a 0700 directory. Refusing to encrypt
+# that is reasonable, and reporting "recovery profile was not completed" is
+# simply untrue: everything asked for was captured.
+#
+# With exports present the profile holds someone's passwords in the clear, so
+# the run still fails and says exactly why.
+encryption_declined() {
+  local reason="$1" count="$2" root="$3"
+  log_manifest "$reason"
+  if [ "$count" -gt 0 ]; then
+    ui_msg "Encryption Cancelled" "$count readable credential export(s) are sitting at:\n$root/imports/\n\nNo encrypted archive was created. Move them to secure storage, or run the backup again and set a passphrase."
+    return 1
+  fi
+  log_manifest "PLAINTEXT profile at $root (no credential exports to protect)"
+  print_warning "No passphrase set, so no encrypted archive was created."
+  print_info "The recovery profile is readable at: $root"
+  return 0
+}
+
 collect_recovery_profile() {
   local profile_root="$BACKUP_ROOT/recovery_profile" export_path imported_path passphrase confirmation
   mkdir -p "$profile_root/imports" "$profile_root/root_system"
@@ -588,8 +611,23 @@ collect_recovery_profile() {
     return 0
   fi
 
-  passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption"; return 1; }
-  confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH") || { log_manifest "CANCELLED recovery profile encryption confirmation"; return 1; }
+  # --non-interactive promises never to reach a dialog. Asking for a passphrase
+  # here broke that promise and, with no terminal to answer it, made an
+  # unattended --recovery-profile run impossible to complete unless
+  # --no-encrypt was also passed. Treat it as a decline instead, which is
+  # harmless with no credential exports and a named failure with them.
+  if [ "$INTERACTIVE" -eq 0 ]; then
+    encryption_declined "SKIPPED recovery profile encryption: unattended, no passphrase can be asked for" "$credential_count" "$profile_root"
+    return $?
+  fi
+  if ! passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+    encryption_declined "CANCELLED recovery profile encryption" "$credential_count" "$profile_root"
+    return $?
+  fi
+  if ! confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+    encryption_declined "CANCELLED recovery profile encryption confirmation" "$credential_count" "$profile_root"
+    return $?
+  fi
   if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
   # This script runs without pipefail, so `tar | gpg` reported only gpg's status.
   # If tar died part-way -- destination full, an unreadable file, a partial adb
@@ -716,8 +754,13 @@ if [ "$RECOVERY_PROFILE" -eq 1 ]; then
   if screen_wait_unlock; then
     if ! collect_recovery_profile; then
       screen_hold_end
-      print_error "Recovery profile was not completed. Review backup_manifest.txt before wiping the phone."
-      exit 1
+      # Not exit 1. The categories the user selected have not run yet, and
+      # abandoning photos and downloads protects nothing that has already gone
+      # wrong here. Count it like every other failure and let the closing
+      # summary report it, after the rest of the backup has been written.
+      BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      log_manifest "FAILED recovery profile"
+      print_warning "Recovery profile was not completed. The rest of the backup continues; review backup_manifest.txt before wiping the phone."
     fi
   else
     # Not a failure of the backup: everything else still runs. But it must be

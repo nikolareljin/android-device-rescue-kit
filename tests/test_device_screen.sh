@@ -6,7 +6,7 @@
 #
 # The fixtures are real `dumpsys window policy` output from a Galaxy S22 on
 # Android 16, not invented text. The device-facing half is covered separately in
-# test_backup_noninteractive.sh against the mock adb.
+# test_backup_flows.sh against the mock adb.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
