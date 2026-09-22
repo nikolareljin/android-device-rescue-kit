@@ -5,6 +5,24 @@ notes from it and matches nothing else.
 
 ## 2026-09-22 — v0.7.1
 
+### No device identifiers in the repository
+
+- `tests/test_device_state.sh` carried a real Samsung serial on four lines,
+  captured verbatim from a handset while the fixture was written and released
+  several times since. It looked exactly like the invented strings beside it.
+  It is gone, along with a second fixture serial that kept a real-looking
+  vendor prefix.
+- Real handsets can still be used locally. `env.example` documents
+  `ANDROID_RESCUE_TEST_SERIAL`; copy it to `.env`, which is gitignored, and the
+  fixtures pick it up. With no `.env` the suite runs exactly as it does in CI,
+  against an obviously fake serial.
+- `tests/test_no_device_identifiers.sh` fails if a tracked file carries
+  something serial-shaped, if `.env` is ever tracked, if the ignore rule stops
+  working, or if `env.example` disappears. Verified it catches the exact string
+  that was removed, and that it does not flag ordinary prose: an earlier
+  version of the check matched "replacement" and "restriction", and a guard
+  that cries wolf gets switched off.
+
 ### Screenshots on the site, and a terminal left readable
 
 - The documentation site now shows what the tool looks like: the probe, the

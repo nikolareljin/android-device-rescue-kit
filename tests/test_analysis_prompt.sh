@@ -5,6 +5,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/test_env.sh
+source "$ROOT/tests/lib/test_env.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -24,7 +26,7 @@ BUILD="$ROOT/tools/build_analysis_prompt.sh"
 make_capture() {
   local dir="$1"
   mkdir -p "$dir"
-  printf 'ro.serialno=R5CT40EXAMPLE\n' >"$dir/getprop.txt"
+  printf 'ro.serialno=%s\n' "$TEST_SERIAL" >"$dir/getprop.txt"
   printf 'triage report\nreboot reason: watchdog\n' >"$dir/analysis_report.txt"
 }
 
@@ -65,10 +67,10 @@ pass
 # `adrescue log` produced it: the same file with two modes depending on the
 # path taken.
 mkdir -p "$WORK/lazy"
-printf 'ro.serialno=R5CT40EXAMPLE\n' >"$WORK/lazy/getprop.txt"
+printf 'ro.serialno=%s\n' "$TEST_SERIAL" >"$WORK/lazy/getprop.txt"
 bash "$BUILD" "$WORK/lazy" >/dev/null 2>&1
 mkdir -p "$WORK/direct"
-printf 'ro.serialno=R5CT40EXAMPLE\n' >"$WORK/direct/getprop.txt"
+printf 'ro.serialno=%s\n' "$TEST_SERIAL" >"$WORK/direct/getprop.txt"
 bash "$ROOT/tools/analyze_android_capture.sh" "$WORK/direct" >/dev/null 2>&1
 lazy_mode="$(mode_of "$WORK/lazy/analysis_report.txt")"
 direct_mode="$(mode_of "$WORK/direct/analysis_report.txt")"
