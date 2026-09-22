@@ -23,6 +23,13 @@ notes from it and matches nothing else.
 - `--non-interactive` promised never to reach a dialog and then asked for a
   passphrase, so an unattended `--recovery-profile` run could not finish unless
   `--no-encrypt` was passed as well. It no longer asks.
+- Nothing about the credential-export options changed. Every password manager
+  and authenticator in `config/recovery_apps.txt` is still offered, the prompt
+  still accepts several exported files, and the attended path now has tests so
+  those options cannot be narrowed unnoticed. `tests/test_backup_flows.sh`
+  (renamed from `test_backup_noninteractive.sh`) covers both attended and
+  unattended runs; there was no attended coverage before, which is how this
+  shipped.
 
 ## 2026-09-21 — v0.6.2
 

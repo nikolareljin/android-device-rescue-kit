@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# SCRIPT: test_backup_noninteractive.sh
-# DESCRIPTION: Prove --non-interactive never reaches a dialog, and that --no-encrypt leaves readable credentials.
-# USAGE: bash tests/test_backup_noninteractive.sh
-# EXAMPLE: bash tests/test_backup_noninteractive.sh
+# SCRIPT: test_backup_flows.sh
+# DESCRIPTION: The backup flows, attended and unattended: dialogs never reached when unattended, and the credential-export path intact.
+# USAGE: bash tests/test_backup_flows.sh
+# EXAMPLE: bash tests/test_backup_flows.sh
 #
 # `dialog` is replaced by a stub that records being called and exits non-zero.
 # An unattended run that touches any prompt therefore fails loudly here rather
@@ -493,10 +493,88 @@ check "the credential export was still imported" "present" \
 check "and the rest of the backup still ran" "present" \
   "$([ -d "$BK7/shared/Download" ] && echo present || echo absent)"
 
+# --- attended: the whole credential-export path still works ----------------
+#
+#     There was no attended coverage at all, which is how a defect in the
+#     passphrase step shipped. This drives the real interactive route: the
+#     owner picks a manager to open, types the path of the file that manager
+#     exported, and sets a passphrase.
+#
+#     It exists to stop the export options being narrowed. Any change that
+#     stops offering the manager list, or stops accepting an exported file,
+#     fails here.
+
+: >"$WORK/dialog_seen.txt"
+: >"$WORK/inputbox_calls"
+cat >"$BIN/dialog" <<MOCK
+#!/usr/bin/env bash
+args="\$*"
+printf '%s\n' "\$args" >>"$WORK/dialog_seen.txt"
+case "\$args" in
+  *"Open A Password Manager"*) printf '0\n'; exit 0 ;;
+  *--checklist*) printf 'recovery_profile\ndownloads\n'; exit 0 ;;
+  *"Credential Export"*)
+      n=\$(wc -l <"$WORK/inputbox_calls")
+      printf 'x\n' >>"$WORK/inputbox_calls"
+      if [ "\$n" -eq 0 ]; then printf '/sdcard/Download/passwords.csv\n'; else printf '\n'; fi
+      exit 0 ;;
+  *--passwordbox*) printf 'correct horse battery staple\n'; exit 0 ;;
+  *) exit 0 ;;
+esac
+MOCK
+chmod +x "$BIN/dialog"
+
+BK8="$WORK/backup8"; mkdir -p "$BK8"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK8" --recovery-profile </dev/null \
+    >"$WORK/out8.txt" 2>&1 )
+check "attended export run exits 0" "0" "$?"
+check "the manager list was offered" "1" \
+  "$(grep -c 'Open A Password Manager' "$WORK/dialog_seen.txt")"
+check "the chosen manager was opened" "1" \
+  "$(grep -c '^OPENED ' "$BK8/backup_manifest.txt")"
+check "the credential export prompt was shown" "2" \
+  "$(grep -c 'Credential Export' "$WORK/dialog_seen.txt")"
+check "the exported file was imported" "present" \
+  "$([ -s "$BK8/recovery_profile/imports/passwords.csv" ] && echo present || echo absent)"
+check "and counted" "1" \
+  "$(grep -c 'Credential exports imported: 1' "$BK8/backup_manifest.txt")"
+check "the encrypted archive was built and verified" "1" \
+  "$(grep -c 'OK recovery-profile.tar.gpg verified' "$BK8/backup_manifest.txt")"
+
+# --- attended: no manager chosen, passphrase cancelled ---------------------
+#
+#     The reported case. Passwords live in the owner's Google account, so no
+#     provider is picked and there is nothing to encrypt.
+
+: >"$WORK/dialog_seen.txt"
+cat >"$BIN/dialog" <<MOCK
+#!/usr/bin/env bash
+args="\$*"
+case "\$args" in
+  *"Open A Password Manager"*) exit 0 ;;
+  *--checklist*) printf 'recovery_profile\ndownloads\n'; exit 0 ;;
+  *--inputbox*) printf '\n'; exit 0 ;;
+  *--passwordbox*) exit 1 ;;
+  *) exit 0 ;;
+esac
+MOCK
+chmod +x "$BIN/dialog"
+
+BK9="$WORK/backup9"; mkdir -p "$BK9"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK9" --recovery-profile </dev/null \
+    >"$WORK/out9.txt" 2>&1 )
+check "attended, nothing to encrypt: exits 0" "0" "$?"
+check "the profile was captured anyway" "present" \
+  "$([ -s "$BK9/recovery_profile/settings_system.txt" ] && echo present || echo absent)"
+check "it is not called a failure" "0" \
+  "$(grep -c 'FAILED recovery profile' "$BK9/backup_manifest.txt")"
+check "and the old error text is gone" "0" \
+  "$(sed 's/\x1b\[[0-9;]*m//g' "$WORK/out9.txt" | grep -c 'Recovery profile was not completed')"
+
 if [ "$FAILURES" -eq 0 ]; then
-  printf 'backup_noninteractive: %d checks passed\n' "$TESTS"
+  printf 'backup_flows: %d checks passed\n' "$TESTS"
 else
-  printf 'backup_noninteractive: %d of %d checks FAILED\n' "$FAILURES" "$TESTS" >&2
+  printf 'backup_flows: %d of %d checks FAILED\n' "$FAILURES" "$TESTS" >&2
   printf -- '--- run output ---\n' >&2
   sed 's/\x1b\[[0-9;]*m//g' "$WORK/out.txt" | tail -25 >&2
   exit 1
