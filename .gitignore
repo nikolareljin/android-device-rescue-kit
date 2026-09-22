@@ -94,3 +94,9 @@ Thumbs.db
 !docs/**/*.html
 !docs/assets/
 !docs/assets/site.css
+
+# Local test settings. env.example is the committed template; .env names a real
+# handset for local runs and must never be committed, because a serial
+# identifies a specific phone and this repository is public.
+.env
+!env.example

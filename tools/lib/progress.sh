@@ -252,6 +252,13 @@ progress_session_end() {
         PROGRESS_ACTIVE=0
         exec 9>&-
         [ -n "$PROGRESS_PID" ] && wait "$PROGRESS_PID" 2>/dev/null
+        # dialog leaves its last frame on the screen. The summary that follows
+        # -- what was copied, what is missing, where it went -- is the part
+        # someone reads before wiping a phone, and it was printing into the
+        # middle of a dead progress box.
+        if [ -t 1 ] && command -v clear >/dev/null 2>&1; then
+            clear
+        fi
         # Everything held back while the gauge owned the terminal. Without this
         # the counts and any warning would exist only in the manifest.
         for note in ${PROGRESS_NOTES+"${PROGRESS_NOTES[@]}"}; do

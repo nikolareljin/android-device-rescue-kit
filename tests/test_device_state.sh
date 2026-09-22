@@ -9,6 +9,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/test_env.sh
+source "$ROOT/tests/lib/test_env.sh"
 # shellcheck source=tools/lib/common.sh
 source "$ROOT/tools/lib/common.sh"
 
@@ -22,22 +24,22 @@ check() {
   fi
 }
 
-READY='List of devices attached
-R5CT2036VLW	device
-'
+READY="List of devices attached
+${TEST_SERIAL}	device
+"
 # Captured verbatim while the phone had dropped its authorisation.
-UNAUTH='List of devices attached
-R5CT2036VLW	unauthorized
-'
-OFFLINE='List of devices attached
-R5CT2036VLW	offline
-'
+UNAUTH="List of devices attached
+${TEST_SERIAL}	unauthorized
+"
+OFFLINE="List of devices attached
+${TEST_SERIAL}	offline
+"
 NONE='List of devices attached
 '
-TWO='List of devices attached
-R5CT2036VLW	device
+TWO="List of devices attached
+${TEST_SERIAL}	device
 EMULATOR30	device
-'
+"
 
 check "ready device"        "device"       "$(adb_device_state "$READY")"
 check "unauthorized"        "unauthorized" "$(adb_device_state "$UNAUTH")"

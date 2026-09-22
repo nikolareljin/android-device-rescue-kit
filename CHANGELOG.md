@@ -3,6 +3,48 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.7.1
+
+### No device identifiers in the repository
+
+- `tests/test_device_state.sh` carried a real Samsung serial on four lines,
+  captured verbatim from a handset while the fixture was written and released
+  several times since. It looked exactly like the invented strings beside it.
+  It is gone, along with a second fixture serial that kept a real-looking
+  vendor prefix.
+- Real handsets can still be used locally. `env.example` documents
+  `ANDROID_RESCUE_TEST_SERIAL`; copy it to `.env`, which is gitignored, and the
+  fixtures pick it up. With no `.env` the suite runs exactly as it does in CI,
+  against an obviously fake serial.
+- `.env` now does something. `ANDROID_RESCUE_TEST_DEVICE=1` was documented as
+  opting into tests that need a phone, and no test read it: the file promised
+  a capability that did not exist. `tests/test_real_device.sh` is that test.
+  It skips unless opted in, requires a serial so a run cannot reach whichever
+  handset happens to be plugged in, and exports it as `ANDROID_SERIAL` so every
+  adb call underneath targets that phone. It is read-only: it probes and reads
+  state, copies nothing off the phone and writes nothing to it.
+- `tests/test_no_device_identifiers.sh` fails if a tracked file carries
+  something serial-shaped, if `.env` is ever tracked, if the ignore rule stops
+  working, or if `env.example` disappears. Verified it catches the exact string
+  that was removed, and that it does not flag ordinary prose: an earlier
+  version of the check matched "replacement" and "restriction", and a guard
+  that cries wolf gets switched off.
+
+### Screenshots on the site, and a terminal left readable
+
+- The documentation site now shows what the tool looks like: the probe, the
+  copy gauge, the shared-storage gauge, the closing summary, `adrescue config`
+  and the command list.
+- They are not mock-ups and they are not from anyone's phone.
+  `scripts/make_screenshots.sh` builds a fake device -- invented file names, an
+  invented destination, no hardware -- runs the real scripts against it under
+  Xvfb, and captures the real dialogs. Regenerating them is one command, so a
+  picture cannot quietly stop matching the program.
+- `dialog` leaves its last frame on the screen when it exits, so the closing
+  summary -- what was copied, what is missing, where it went -- printed into
+  the middle of a dead progress box. The session now clears the screen when the
+  bar comes down. That is the part someone reads before wiping a phone.
+
 ## 2026-09-21 — v0.7.0
 
 ### A progress bar for the long copies
