@@ -124,12 +124,27 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
-$bash = Join-Path ${env:ProgramFiles} 'Git\bin\bash.exe'
-if (-not (Test-Path $bash)) {
-    $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+# Deliberately not `Get-Command bash`. On a machine with WSL that resolves to
+# C:\Windows\System32\bash.exe, the WSL launcher, and the shim would then run
+# the one interpreter this whole decision exists to avoid -- silently, and only
+# on the machines where WSL is present.
+$candidates = @()
+foreach ($base in $env:ProgramFiles, ${env:ProgramFiles(x86)}) {
+    if ($base) { $candidates += (Join-Path $base 'Git\bin\bash.exe') }
 }
+if ($env:LOCALAPPDATA) {
+    $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe')
+}
+# Wherever winget actually put it, git.exe is on PATH by now and bash sits one
+# level up beside it: <root>\cmd\git.exe next to <root>\bin\bash.exe.
+$gitExe = (Get-Command git -ErrorAction SilentlyContinue).Source
+if ($gitExe) {
+    $candidates += (Join-Path (Split-Path (Split-Path $gitExe -Parent) -Parent) 'bin\bash.exe')
+}
+
+$bash = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $bash) {
-    throw 'Git for Windows is installed but bash.exe was not found. Reinstall Git for Windows, or run this installer with -UseWsl.'
+    throw 'Git for Windows is installed but its bash.exe was not found. Reinstall Git for Windows, or run this installer with -UseWsl.'
 }
 
 Write-Host ''
@@ -150,16 +165,23 @@ New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
 $shim = Join-Path $shimDir 'adrescue.cmd'
 @(
     '@echo off'
-    'setlocal'
     'rem Runs the toolkit under the bash that Git for Windows provides, against'
     'rem native adb. The toolkit excludes device paths from MSYS conversion'
     'rem itself; nothing is disabled here, because a blanket setting would also'
     'rem stop the local destination being converted, which adb.exe does need.'
-    ('"' + $bash + '" -lc "adrescue $*"')
+    'rem'
+    'rem %* is what forwards the arguments. $* would not: cmd.exe leaves it'
+    'rem alone, bash then expands it against its own empty argument list, and'
+    'rem every `adrescue probe` arrives as a bare `adrescue`. The inner \" is'
+    'rem passed through cmd untouched and reaches bash as a real quote, so'
+    'rem "$@" keeps a path with spaces in one piece.'
+    ('"' + $bash + '" -lc "adrescue \"$@\"" -- %*')
 ) | Set-Content -Path $shim -Encoding ASCII
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -notlike "*$shimDir*") {
+# Compared entry by entry. -like would treat [ ] in a profile path as wildcards,
+# and would also match a different directory that merely contains this one.
+if (($userPath -split ';' | Where-Object { $_.TrimEnd('\') -eq $shimDir.TrimEnd('\') }).Count -eq 0) {
     [Environment]::SetEnvironmentVariable('Path', "$userPath;$shimDir", 'User')
     Write-Host ("Added {0} to your PATH." -f $shimDir)
 }

@@ -15,7 +15,7 @@ require_tool adb || exit 1
 # backup that was attempted.
 adb start-server >/dev/null 2>&1 || true
 require_device || exit 1
-check_if_dialog_installed || exit 1
+require_dialog || exit 1
 MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
 MESSAGE_WIDTH=$((DIALOG_WIDTH < 74 ? DIALOG_WIDTH : 74))
 LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))

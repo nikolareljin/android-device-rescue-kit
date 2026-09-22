@@ -119,6 +119,24 @@ adrescue probe
 
 Plug the phone in with USB debugging enabled. Nothing else is required.
 
+### What runs natively, and what does not
+
+`probe`, `photos`, `log`, `prompt`, `verify`, `config` and `update` run under
+Git Bash exactly as they do on Linux.
+
+`data` and `restore` do not. Both are built on `dialog`, and Git for Windows
+ships a trimmed MSYS2 userland with no package manager to install it with. Run
+those two through WSL, below. Attempting them under Git Bash says so and stops
+rather than failing part-way through a copy.
+
+A switch cannot be passed through `iex`, which takes its command from the
+pipeline and has no parameters of its own. Download the script into a block and
+call that instead:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1))) -DryRun
+```
+
 `-DryRun` reports what it would install and changes nothing.
 
 ### Paths on Windows
@@ -138,7 +156,7 @@ and the phone would answer "no such file" for a folder that is plainly there.
 WSL is still supported for a machine that already runs everything there:
 
 ```powershell
-irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1 | iex -UseWsl
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1))) -UseWsl
 ```
 
 Know what it costs before choosing it. WSL 2 is a virtual machine and its `adb`

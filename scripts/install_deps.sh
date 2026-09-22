@@ -19,6 +19,24 @@ case "$(get_os)" in
   mac)
     install_dependencies android-platform-tools dialog ripgrep unzip gzip coreutils gnupg
     ;;
+  windows)
+    # Git Bash. The packages come from winget in install.ps1, and the trimmed
+    # MSYS2 userland Git for Windows ships has no package manager to install
+    # anything with, so there is nothing to do but report what is actually
+    # here. `dialog` is expected to be missing: it gates `data` and `restore`,
+    # which is stated rather than discovered at the moment someone needs them.
+    missing=""
+    for tool in adb rg unzip gzip gpg; do
+      command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+    done
+    if [ -n "$missing" ]; then
+      print_error "Not on PATH:$missing"
+      print_error "Install them with winget, or re-run install.ps1, then open a new shell."
+      exit 1
+    fi
+    command -v dialog >/dev/null 2>&1 \
+      || print_warning "dialog is not available under Git Bash: 'data' and 'restore' need WSL. Everything else runs here."
+    ;;
   *)
     print_error "Unsupported OS. Install adb, dialog, ripgrep, unzip, and gzip manually."
     exit 1

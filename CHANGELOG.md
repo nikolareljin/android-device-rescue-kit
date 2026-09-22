@@ -5,7 +5,7 @@ notes from it and matches nothing else.
 
 ## 2026-09-22 — v0.8.0
 
-### Windows runs the same toolkit, without WSL
+### Windows runs the toolkit natively, without WSL
 
 Deciding ADR: Windows uses the bash that Git for Windows already ships, against
 native Android platform tools. WSL 2 is a virtual machine and its `adb` cannot
@@ -42,6 +42,46 @@ on a machine the operator may not own. Native `adb.exe` needs none of it.
   `adrescue` works from PowerShell as well as from Git Bash. `-DryRun` changes
   nothing; `-UseWsl` keeps the old path for anyone who wants it, and says what
   usbipd-win will cost them.
+- **`data` and `restore` do not run natively, and now say so.** Both are built
+  on `dialog`, and Git for Windows ships a trimmed MSYS2 userland with no
+  package manager to install it with. They stop with the limit and the WSL
+  alternative, instead of being sent to `scripts/install_deps.sh`, whose only
+  answer for the platform was "Unsupported OS". Everything else -- `probe`,
+  `photos`, `log`, `prompt`, `verify`, `config`, `update` -- runs there.
+
+#### Found by reviewing the above before it shipped
+
+Every Windows check in the first draft was a grep for a string in a file, and
+four of them passed over code that could not work. The suite now runs
+`install.sh` and `scripts/link_launchers.sh` under a stubbed `uname`, and each
+of these was re-broken on purpose to confirm the new check fails.
+
+- **The native install could not finish.** `install.ps1` hands over to
+  `install.sh`, whose platform gate accepted only `Linux` and `Darwin`. Git
+  Bash reports `MINGW64_NT-10.0`, so it fell to the catch-all and answered
+  "On Windows, run install.ps1 from PowerShell" -- to someone who had just run
+  install.ps1 from PowerShell. The run aborted before the shim was written.
+- **The `.cmd` shim dropped every argument.** It was built with `$*`, which is
+  a shell construct: `cmd.exe` passes it through untouched and bash then
+  expands it against its own empty argument list. `adrescue probe` arrived as a
+  bare `adrescue` and printed help. It now forwards `%*` into `"$@"`, which
+  also keeps a path with spaces in one piece.
+- **The shim could have been pointed at WSL.** The fallback for finding bash
+  was `Get-Command bash`, which on any machine with WSL resolves to
+  `C:\Windows\System32\bash.exe` -- the one interpreter this whole decision
+  exists to avoid, chosen silently and only on the machines that have it. bash
+  is now located beside `git.exe`, or in one of the known install roots.
+- **The launchers would have been broken copies.** Git for Windows does not
+  enable symlinks by default and `ln -s` copies instead. `adrescue` finds its
+  installation by following its own symlink chain; with a copy there is no
+  chain, the root resolves to `~/.local/bin`, and every `tools/` lookup misses
+  -- the bug the symlink resolution was written to fix, returning through a
+  different door. The link is now checked after it is made, and a wrapper
+  script is written when it turns out not to be one.
+- **`irm ... | iex -UseWsl` is not valid PowerShell.** `iex` takes its command
+  from the pipeline and has no parameters to pass a switch to, so the
+  documented way to reach the WSL fallback, and `-DryRun`, both failed. The
+  guide now shows the scriptblock form.
 
 ## 2026-09-22 — v0.7.1
 

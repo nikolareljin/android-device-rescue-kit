@@ -33,7 +33,7 @@ The GitHub Pages site provides a visual quick start, command reference, and reco
 
 ## Install
 
-One line, no sudo, on Linux or macOS, or in a WSL terminal on Windows:
+One line, no sudo, on Linux, macOS, or Git Bash on Windows:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.sh | bash
@@ -47,8 +47,13 @@ your `PATH` if it is not there already. Open a new terminal, then:
 adrescue --help
 ```
 
-Windows and WSL, USB passthrough, choosing where rescued data is written, and
-repairing a broken installation are in [Installation](docs/installation.md).
+On Windows, run `install.ps1` from PowerShell instead: it installs the
+dependencies through winget and needs no WSL and no USB passthrough. `data` and
+`restore` are the exception and still want WSL, because they are built on
+`dialog`, which Git for Windows has no way to install.
+
+That, USB passthrough, choosing where rescued data is written, and repairing a
+broken installation are in [Installation](docs/installation.md).
 
 <details>
 <summary><b>Alternative: run it from a git clone</b> - for contributors, or if you would rather not pipe a script into bash</summary>
