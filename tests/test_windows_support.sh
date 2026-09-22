@@ -48,13 +48,17 @@ else
   note "install.ps1 should be eol=crlf, got '$eol'"
 fi
 
-# Whatever the attributes say, nothing tracked may already carry CRLF.
+# A file bash has to read may not carry CRLF. The rule is per-file, taken from
+# the attribute rather than assumed: install.ps1 is deliberately CRLF and is
+# checked out that way, so an "in no file anywhere" rule fails on CI while
+# passing on a working copy that has not been re-touched since.
 crlf=0
 while IFS= read -r f; do
   case "$f" in *.png|*.jpg|*.gif|*.ico|*.pdf|*.gpg|*.zip|*.gz) continue ;; esac
   [ -f "$f" ] || continue
+  [ "$(git check-attr eol -- "$f" | sed 's/.*: //')" = "lf" ] || continue
   if grep -qU $'\r' "$f" 2>/dev/null; then
-    note "$f already contains CRLF"
+    note "$f is declared eol=lf but contains CRLF"
     crlf=$((crlf + 1))
   fi
 done < <(git ls-files)
