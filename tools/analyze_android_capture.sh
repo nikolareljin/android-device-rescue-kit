@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -u
 
+ANALYZE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/zip.sh
+source "$ANALYZE_SCRIPT_DIR/lib/zip.sh"
+
 CAPTURE_DIR="${1:-}"
 
 if [ -z "$CAPTURE_DIR" ] || [ ! -d "$CAPTURE_DIR" ]; then
@@ -26,29 +30,31 @@ mkdir -p "$WORK_DIR"
 extract_bugreport_artifacts() {
   local zip_file="$1"
   local extract_dir="$WORK_DIR/bugreport"
+  local reader
 
   mkdir -p "$extract_dir"
 
-  if ! command -v unzip >/dev/null 2>&1; then
-    printf 'unzip not found; skipping bugreport extraction.\n' >>"$REPORT"
+  if ! reader="$(zip_reader)"; then
+    printf 'No zip reader (unzip or bsdtar); skipping bugreport extraction.\n' >>"$REPORT"
     return
   fi
 
-  unzip -qq -o "$zip_file" \
+  zip_extract "$reader" "$zip_file" "$extract_dir" \
     '*last_kmsg*' \
     '*last_kernel*' \
     '*last_all_history*' \
     '*dumpstate*lastkmsg*' \
     '*recovery*' \
     '*tombstone*' \
-    '*getprop*' \
-    -d "$extract_dir" 2>/dev/null || true
+    '*getprop*'
 
   find "$extract_dir" -type f -name '*.gz' -print | while IFS= read -r gz_file; do
     if gzip -t "$gz_file" >/dev/null 2>&1; then
       gzip -dc "$gz_file" >"${gz_file%.gz}" 2>/dev/null || true
-    elif unzip -t "$gz_file" >/dev/null 2>&1; then
-      unzip -qq -o "$gz_file" -d "${gz_file%.gz}_unzipped" 2>/dev/null || true
+    elif zip_looks_readable "$reader" "$gz_file"; then
+      # Named .gz but actually a zip, which some vendor bugreports do.
+      mkdir -p "${gz_file%.gz}_unzipped"
+      zip_extract "$reader" "$gz_file" "${gz_file%.gz}_unzipped"
     fi
   done
 }

@@ -289,45 +289,75 @@ else
   pass
 fi
 
-# --- the two commands that cannot run there say so --------------------------
+# --- the interactive commands run with dialog absent ------------------------
 #
-#     dialog gates `data` and `restore`, Git for Windows ships no package
-#     manager to install it with, and install_deps.sh answers this platform
-#     with "Unsupported OS". Being sent to that script is worse than being told
-#     the limit.
+#     dialog gates `data` and `restore`, and Git for Windows ships no package
+#     manager to install it with. Until 0.9.0 restore had no path that did not
+#     go through dialog, so it could not run there in any form. The prompts now
+#     fall back to plain text.
 
-nodialog="$WORK/nodialog"
-mkdir -p "$nodialog"
-printf '#!/usr/bin/env bash\nprintf "MINGW64_NT-10.0\\n"\n' >"$nodialog/uname"
-chmod +x "$nodialog/uname"
+# Nothing may call a dialog widget outside the UI layer. This is the check that
+# keeps the fallback whole: one new `dialog --menu` added later in a tool would
+# reintroduce exactly the old failure, in one flow, on a platform CI does not
+# run.
+# Scanned with the line continuations joined first, because a line-based grep
+# cannot see these calls at all: every one is written across several lines,
+#
+#     picked=$(dialog --stdout --separate-output \
+#       --title "..." \
+#       --checklist "..." \
+#
+# so the line holding `dialog` has no widget on it and the line holding the
+# widget has no `dialog`. Two earlier versions of this check were blind for
+# that reason, and the second one passed while a real call site still went
+# straight to dialog -- found only when the removed $LIST_HEIGHT broke it.
+stray="$(python3 - <<'SCAN'
+import re, pathlib
+WIDGET = re.compile(r"--(checklist|menu|radiolist|msgbox|yesno|inputbox|passwordbox)\b")
+for path in list(pathlib.Path("tools").rglob("*.sh")) + [pathlib.Path("adrescue")]:
+    if path.as_posix() == "tools/lib/ui.sh" or not path.is_file():
+        continue
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # Join continuations, keeping a line number for the start of each command.
+    joined, start, buf = [], 1, ""
+    for n, line in enumerate(text.splitlines(), 1):
+        if not buf:
+            start = n
+        buf += line.rstrip("\\")
+        if line.rstrip().endswith("\\"):
+            continue
+        joined.append((start, buf))
+        buf = ""
+    if buf:
+        joined.append((start, buf))
+    for n, cmd in joined:
+        if cmd.lstrip().startswith("#"):
+            continue
+        if re.search(r"\bdialog\b", cmd) and WIDGET.search(cmd):
+            print(f"{path}:{n}: {cmd.strip()[:100]}")
+SCAN
+)"
+if [ -z "$stray" ]; then
+  pass
+else
+  note "a dialog widget is called outside tools/lib/ui.sh:"
+  printf '%s\n' "$stray" | sed 's/^/    /' >&2
+fi
 
-# dialog is hidden by shadowing the lookup rather than by pruning PATH. A
-# stripped-down PATH also removes what common.sh and script-helpers need to
-# load, and the test then passes for the wrong reason -- it would report the
-# Windows message as absent on a machine where the file never loaded at all.
-msg="$(PATH="$nodialog:$PATH" bash -c '
-  source "'"$ROOT"'/tools/lib/common.sh" >/dev/null 2>&1
-  command() {
-    if [ "${1:-}" = "-v" ] && [ "${2:-}" = "dialog" ]; then return 1; fi
-    builtin command "$@"
-  }
-  require_dialog
-' 2>&1)"
-rc=$?
-
-if [ "$rc" -eq 0 ]; then
-  note "require_dialog succeeded with no dialog present"
+# The gate that used to refuse is gone, rather than merely unused.
+if grep -q 'require_dialog' tools/lib/common.sh; then
+  note "require_dialog still exists in common.sh; a caller could reintroduce the refusal"
 else
   pass
-  case "$msg" in
-    *install_deps*) note "the Windows message sends the user to install_deps.sh, which answers 'Unsupported OS'" ;;
-    *) pass ;;
-  esac
-  case "$msg" in
-    *WSL*) pass ;;
-    *) note "the Windows dialog message does not say what to do instead: $msg" ;;
-  esac
 fi
+
+for tool in tools/android_restore_dialog.sh tools/android_backup_dialog.sh; do
+  if grep -q 'ui_init' "$tool"; then
+    pass
+  else
+    note "$tool does not initialise the UI layer"
+  fi
+done
 
 if [ "$failures" -eq 0 ]; then
   printf 'windows_support: %s checks passed\n' "$checks"

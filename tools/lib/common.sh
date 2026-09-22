@@ -63,38 +63,6 @@ require_tool() {
   fi
 }
 
-# The dialog gate every interactive tool goes through.
-#
-# Defined out here, after the helpers have loaded, rather than inside the
-# fallback branch above: script-helpers exports its own
-# check_if_dialog_installed, so anything written in that branch is invisible on
-# every machine where the submodule is checked out -- which is every
-# development clone, and the only ones left to test it are the ones that cannot
-# run it. A guard that cannot reach what it guards looks exactly like a working
-# guard.
-#
-# Git for Windows ships a trimmed MSYS2 userland with no package manager, so
-# there is nothing there to install dialog with. `data` and `restore` are the
-# only two commands that need it. Saying "run scripts/install_deps.sh" would
-# send the user to a script whose only answer for this platform is
-# "Unsupported OS", which reads as a broken toolkit instead of a known limit.
-require_dialog() {
-  if ! command -v dialog >/dev/null 2>&1; then
-    case "$(uname -s 2>/dev/null)" in
-      MINGW*|MSYS*|CYGWIN*)
-        print_error "dialog is not available under Git Bash, so this command cannot run natively on Windows."
-        printf '  probe, photos, log, prompt and verify need no dialog and do work here.\n' >&2
-        printf '  For this one, install into WSL instead:\n' >&2
-        printf '    & ([scriptblock]::Create((irm %s))) -UseWsl\n' \
-          'https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1' >&2
-        printf '  See docs/installation.md, "The WSL fallback".\n' >&2
-        return 1
-        ;;
-    esac
-  fi
-  check_if_dialog_installed
-}
-
 # --- device reachability ---------------------------------------------------
 #
 # `require_tool adb` only proves the binary exists. It says nothing about

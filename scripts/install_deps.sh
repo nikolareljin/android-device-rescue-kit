@@ -11,6 +11,8 @@ fi
 # shellcheck source=/dev/null
 source "$SCRIPT_HELPERS_DIR/helpers.sh"
 shlib_import deps os logging
+# shellcheck source=tools/lib/zip.sh
+source "$REPO_ROOT/tools/lib/zip.sh"
 
 case "$(get_os)" in
   linux)
@@ -25,8 +27,9 @@ case "$(get_os)" in
     # anything with, so there is nothing to do but report what is actually
     # here. `dialog` is expected to be missing: it gates `data` and `restore`,
     # which is stated rather than discovered at the moment someone needs them.
+    # Required: without any of these a command fails outright.
     missing=""
-    for tool in adb rg unzip gzip gpg; do
+    for tool in adb rg gzip gpg tar; do
       command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
     done
     if [ -n "$missing" ]; then
@@ -34,8 +37,29 @@ case "$(get_os)" in
       print_error "Install them with winget, or re-run install.ps1, then open a new shell."
       exit 1
     fi
-    command -v dialog >/dev/null 2>&1 \
-      || print_warning "dialog is not available under Git Bash: 'data' and 'restore' need WSL. Everything else runs here."
+
+    # Optional, and each degrades something specific rather than failing. Said
+    # plainly here, because "installed everything" that quietly leaves two gaps
+    # is how a smaller report and a different set of prompts get blamed on the
+    # phone.
+    if ! command -v dialog >/dev/null 2>&1; then
+      print_info "dialog: not available. Git for Windows ships no package manager to install it with,"
+      print_info "  so the prompts are numbered questions instead of full-screen menus. Same questions."
+      print_info "  Force either mode anywhere with: adrescue --ui dialog|text"
+    fi
+    # Asked of the same function adrescue log uses, not a second probe. The
+    # second probe looked only at `tar`, which inside Git Bash is Git's GNU
+    # tar, so it announced that the bugreport would be skipped on a machine
+    # where /c/Windows/System32/tar.exe would have read it perfectly well.
+    if ! command -v unzip >/dev/null 2>&1; then
+      if reader="$(zip_reader)"; then
+        print_info "unzip: not present; $reader will read the bugreport zip instead."
+      else
+        print_warning "unzip: not present, and nothing else here reads a zip. 'adrescue log' will"
+        print_warning "  skip bugreport extraction, which is where last_kmsg, tombstones and"
+        print_warning "  recovery logs live."
+      fi
+    fi
     ;;
   *)
     print_error "Unsupported OS. Install adb, dialog, ripgrep, unzip, and gzip manually."

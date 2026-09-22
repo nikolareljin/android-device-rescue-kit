@@ -4,6 +4,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=tools/lib/ui.sh
+source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=tools/lib/device_screen.sh
 source "$SCRIPT_DIR/lib/device_screen.sh"
 # shellcheck source=tools/lib/progress.sh
@@ -15,10 +17,9 @@ require_tool adb || exit 1
 # backup that was attempted.
 adb start-server >/dev/null 2>&1 || true
 require_device || exit 1
-require_dialog || exit 1
-MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
-MESSAGE_WIDTH=$((DIALOG_WIDTH < 74 ? DIALOG_WIDTH : 74))
-LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
+# Was `require_dialog || exit 1`. The prompts fall back now, so there is
+# nothing to refuse.
+ui_init || exit 1
 
 # --- ui layer --------------------------------------------------------------
 #
@@ -27,28 +28,12 @@ LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))
 # The point is that the two modes execute the same surrounding code, so a bug
 # fixed in one is fixed in both.
 
-ui_msg() {
-  local title="$1" text="$2"
-  if [ "$INTERACTIVE" -eq 1 ]; then
-    dialog --title "$title" --msgbox "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
-  else
-    printf '[%s] %s\n' "$title" "$(printf '%b' "$text" | tr '\n' ' ')" >&2
-  fi
-}
+ui_msg() { ui_msgbox "$1" "$2"; }
 
-# ui_yesno <title> <text> <default: yes|no>
-ui_yesno() {
-  local title="$1" text="$2" default="$3"
-  if [ "$INTERACTIVE" -eq 0 ]; then
-    [ "$default" = "yes" ]
-    return $?
-  fi
-  if [ "$default" = "no" ]; then
-    dialog --defaultno --title "$title" --yesno "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
-  else
-    dialog --title "$title" --yesno "$text" "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"
-  fi
-}
+# ui_yesno and ui_msgbox come from tools/lib/ui.sh. There is no wrapper here:
+# one named ui_yesno used to sit in this file, and once its body delegated to
+# the library the function called itself. bash answers that with SIGSEGV, and
+# the run dies with exit 139 and no message.
 
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -71,7 +56,7 @@ ENCRYPT_PROFILE=1
 # Interactive by default. Non-interactive exists so the flow can be scripted and
 # tested; both modes go through the same ui_* helpers below, so there is one code
 # path rather than two that drift.
-INTERACTIVE=1
+INTERACTIVE=1; UI_NONINTERACTIVE=0; export UI_NONINTERACTIVE
 SELECTION=""
 CREDENTIAL_EXPORTS=()
 # Packages to open for an owner-run export. Empty means ask (interactive) or
@@ -88,7 +73,7 @@ while [ "$#" -gt 0 ]; do
     --keep-plaintext) KEEP_PLAINTEXT=1; NO_PROMPT_PLAINTEXT=1 ;;
     --discard-plaintext) KEEP_PLAINTEXT=0; NO_PROMPT_PLAINTEXT=1 ;;
     --no-encrypt) ENCRYPT_PROFILE=0 ;;
-    --non-interactive) INTERACTIVE=0 ;;
+    --non-interactive) INTERACTIVE=0; UI_NONINTERACTIVE=1; export UI_NONINTERACTIVE ;;
     --select) SELECTION="${2:-}"; shift ;;
     --credential-export) CREDENTIAL_EXPORTS+=("${2:-}"); shift ;;
     --open-manager) OPEN_MANAGERS+=("${2:-}"); shift ;;
@@ -179,10 +164,9 @@ select_backup_root() {
   fi
 
   local mode base_dir
-  mode=$(dialog --stdout \
-    --title "Backup Destination" \
-    --radiolist "Choose where to store the backup. Custom paths must already be mounted on this computer." \
-    "$DIALOG_HEIGHT" "$DIALOG_WIDTH" 4 \
+  mode=$(ui_radiolist \
+    "Backup Destination" \
+    "Choose where to store the backup. Custom paths must already be mounted on this computer." \
     local "$default_root" on \
     custom "Custom destination path" off)
 
@@ -195,10 +179,10 @@ select_backup_root() {
       printf '%s\n' "$default_root"
       ;;
     custom)
-      base_dir=$(dialog --stdout \
-        --title "Destination Path" \
-        --inputbox "Enter a destination directory. A timestamped subfolder will be created inside it." \
-        "$MESSAGE_HEIGHT" "$DIALOG_WIDTH" "${ANDROID_BACKUP_DEST:-/mnt/nas/android-backups}")
+      base_dir=$(ui_inputbox \
+        "Destination Path" \
+        "Enter a destination directory. A timestamped subfolder will be created inside it." \
+        "${ANDROID_BACKUP_DEST:-/mnt/nas/android-backups}")
       if [ $? -ne 0 ] || [ -z "$base_dir" ]; then
         return 1
       fi
@@ -429,10 +413,10 @@ open_recovery_apps() {
       args+=("$i" "${DETECTED_NAMES[$i]}" off)
     done
     local picked
-    picked=$(dialog --stdout --separate-output \
-      --title "Open A Password Manager" \
-      --checklist "Choose which to open on the phone so you can run its own export. Nothing is opened unless you pick it, and this tool never enters a secret or approves a prompt." \
-      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" "${args[@]}") || picked=""
+    picked=$(ui_checklist \
+      "Open A Password Manager" \
+      "Choose which to open on the phone so you can run its own export. Nothing is opened unless you pick it, and this tool never enters a secret or approves a prompt." \
+      "${args[@]}") || picked=""
     for i in $picked; do chosen+=("$i"); done
   fi
 
@@ -594,7 +578,7 @@ collect_recovery_profile() {
     elif [ "$INTERACTIVE" -eq 0 ]; then
       break
     else
-      export_path=$(dialog --stdout --title "Credential Export ($credential_count imported)" --inputbox "Exact phone path of an owner-exported password file (csv, json, 1pux, kdbx).\n\nLeave empty and press OK when there are no more." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH" "$credential_prefill") || export_path=""
+      export_path=$(ui_inputbox "Credential Export ($credential_count imported)" "Exact phone path of an owner-exported password file (csv, json, 1pux, kdbx).\n\nLeave empty and press OK when there are no more." "$credential_prefill") || export_path=""
     fi
     credential_prefill=""
     [ -n "$export_path" ] || break
@@ -668,11 +652,11 @@ collect_recovery_profile() {
     encryption_declined "SKIPPED recovery profile encryption: unattended, no passphrase can be asked for" "$credential_count" "$profile_root"
     return $?
   fi
-  if ! passphrase=$(dialog --stdout --title "Encrypt Recovery Profile" --passwordbox "Create a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+  if ! passphrase=$(ui_passwordbox "Encrypt Recovery Profile" "Create a passphrase for the encrypted recovery archive."); then
     encryption_declined "CANCELLED recovery profile encryption" "$credential_count" "$profile_root"
     return $?
   fi
-  if ! confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+  if ! confirmation=$(ui_passwordbox "Confirm Passphrase" "Re-enter the recovery archive passphrase."); then
     encryption_declined "CANCELLED recovery profile encryption confirmation" "$credential_count" "$profile_root"
     return $?
   fi
@@ -688,11 +672,11 @@ collect_recovery_profile() {
       return 1
     fi
     passphrase_tries=$((passphrase_tries + 1))
-    if ! passphrase=$(dialog --stdout --title "Passphrases Did Not Match" --passwordbox "The two entries were different, or empty.\n\nCreate a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+    if ! passphrase=$(ui_passwordbox "Passphrases Did Not Match" "The two entries were different, or empty.\n\nCreate a passphrase for the encrypted recovery archive."); then
       encryption_declined "CANCELLED recovery profile encryption" "$credential_count" "$profile_root"
       return $?
     fi
-    if ! confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+    if ! confirmation=$(ui_passwordbox "Confirm Passphrase" "Re-enter the recovery archive passphrase."); then
       encryption_declined "CANCELLED recovery profile encryption confirmation" "$credential_count" "$profile_root"
       return $?
     fi
@@ -723,7 +707,7 @@ collect_recovery_profile() {
     if [ "$NO_PROMPT_PLAINTEXT" -eq 1 ]; then
       # Decided on the command line; asking again would only invite a mistake.
       [ "$KEEP_PLAINTEXT" -eq 1 ] && keep_them=1
-    elif dialog --title "Retain Plaintext Credentials?" --yesno "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive?\n\nYes keeps both copies. No keeps them only inside the archive, which has already been verified to extract." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"; then
+    elif ui_yesno "Retain Plaintext Credentials?" "$credential_count readable credential export(s) sit under:\n$profile_root/imports/\n\nKeep them beside the encrypted archive?\n\nYes keeps both copies. No keeps them only inside the archive, which has already been verified to extract." yes; then
       keep_them=1
     fi
     if [ "$keep_them" -eq 1 ]; then
@@ -753,10 +737,9 @@ if [ "$INTERACTIVE" -eq 0 ]; then
   fi
   CHOICES="$(printf '%s' "$SELECTION" | tr ',' '\n')"
 else
-CHOICES=$(dialog --stdout --separate-output \
-  --title "Android Backup" \
-  --checklist "Select data to preserve. Private app databases usually require the app's official transfer feature." \
-  "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$LIST_HEIGHT" \
+CHOICES=$(ui_checklist \
+  "Android Backup" \
+  "Select data to preserve. Private app databases usually require the app's official transfer feature." \
   photos "Every photo and video on the device, found and verified" on \
   downloads "Downloads and documents from shared storage" on \
   whatsapp "WhatsApp visible media and local shared backup folders" on \

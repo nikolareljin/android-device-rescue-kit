@@ -3,6 +3,133 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.9.0
+
+### Every prompt works without dialog
+
+`restore` had no path that did not go through `dialog`. On Git Bash for
+Windows, which ships a trimmed MSYS2 userland with no package manager to
+install it with, the command could not run in any form. `data` was the same
+unless `--non-interactive` was passed, which answers the questions rather than
+asking them.
+
+- **A UI layer, `tools/lib/ui.sh`, with two backends.** `dialog` when it is
+  there, plain numbered prompts when it is not, chosen once per run. Six
+  widgets: message, yes/no, menu, radio list, check list, input and passphrase.
+  `ANDROID_RESCUE_UI=text` forces the plain prompts anywhere, which is how they
+  are tested on a machine that has dialog installed.
+- **dialog is still required on Linux and macOS.** The text backend is not a
+  general substitute for it. `scripts/install_deps.sh` installs dialog on those
+  platforms, so its absence means a broken install, and quietly serving plain
+  prompts would hide that: the operator would get a worse tool and no reason
+  why. Missing there is refused, with the override named in the message. The
+  fallback is automatic only where dialog cannot be installed at all, which is
+  Git Bash on Windows, and it says so when it happens. Three situations, and
+  the suite holds all three apart:
+
+  | Platform | dialog | Result |
+  |---|---|---|
+  | Linux, macOS | missing | refused, and says how to install it or override |
+  | Git Bash on Windows | missing | plain prompts, announced |
+  | anywhere | `ANDROID_RESCUE_UI=text` | plain prompts, silently, because it was asked for |
+- It keeps dialog's contract exactly, because every caller was written against
+  it: the answer on stdout and nothing else, prompts on stderr, non-zero for
+  cancel. A fallback that printed its menu to stdout would put the menu into
+  the caller's variable, and the caller would act on a string that happens to
+  contain the right word somewhere.
+- **A passphrase prompt restores terminal echo through a trap**, not only on
+  the way out. Ctrl-C at that prompt otherwise leaves echo off and the next
+  command the user types is invisible.
+- **Cancelling and selecting nothing stay distinct.** Both leave the phone
+  untouched, but one is an error and the other is a finished run, and a restore
+  must never write because a menu was misread.
+- `require_dialog` is gone. It was added in 0.8.0 to explain the limit; there
+  is no longer a limit to explain, and a gate left in place is a gate something
+  can call again.
+- **The test suite runs the flows with `dialog` absent from `PATH`**, not
+  stubbed: `PATH` is rebuilt from a directory holding the mock adb and named
+  symlinks, so a dialog installed on the machine cannot be reached. A stub that
+  exits non-zero proves something weaker, since a flow could be branching on
+  its failure rather than never calling it. The flows are then run again
+  against a dialog stub that answers, so the fallback cannot quietly become the
+  only path that works.
+- The fake adb moves to `tests/lib/mock_adb.sh` and gains `push` and device-side
+  `mkdir -p`, so restore can be driven end to end. One copy, shared by both
+  suites.
+
+### Windows gets the dependencies it can have, and is told about the rest
+
+- **`adrescue --ui dialog|text`.** The mode is a flag with a place in `--help`,
+  not only an environment variable, and it is validated at the edge: passed
+  through unchecked, a typo would become the backend's name and every widget
+  would silently take the text branch, because anything that is not "dialog" is
+  text. `adrescue config` reports the mode it would use and why -- "asked for",
+  "installed", "cannot be installed here" and "missing" all produce a line, and
+  the last two look identical from the outside without it.
+- **The bugreport is read by whatever the machine has.** `adrescue log`
+  extracted it with `unzip`, which Git for Windows does not ship, and the GNU
+  tar it does ship cannot read a zip. The step printed "unzip not found" and
+  skipped -- and the bugreport is where `last_kmsg`, the tombstones and the
+  recovery logs are, so the report came out smaller with one line to say why.
+  Windows itself provides bsdtar as `tar.exe`, which does read zip, so the
+  reader is now chosen by asking the binary rather than by its name: `tar` is
+  GNU on Linux and inside Git Bash, bsdtar on macOS and Windows.
+- **The installers check the whole set.** `install.ps1` verified `git`, `adb`,
+  `rg` and `gpg` and never looked at `gzip` or `tar`, and `install_deps.sh`
+  named `unzip` on every platform without noticing it is absent on one. Both
+  now separate what must be present from what degrades something specific, and
+  say which. `dialog` has no winget package usable from this shell: it lives in
+  MSYS2's `msys` repository and needs that runtime, Git for Windows ships a
+  fork of it with no package manager, and loading a second build of
+  `msys-2.0.dll` into one process is not supported. That is stated at install
+  time rather than discovered mid-rescue.
+
+#### Found reviewing the above
+
+- **The backend was not decided once, though the comment said it was.** It
+  resolved on every widget call, so the answer followed `PATH`: a run that
+  gained or lost `dialog` halfway would draw a curses screen for one question
+  and a text prompt for the next. The memo also has to live outside a command
+  substitution, since `[ "$(ui_backend)" = dialog ]` takes its copy in a
+  subshell and throws it away; `ui_is_dialog` reads the variable instead.
+- **The terminal test only ran on Linux.** `script(1)` has two incompatible
+  flavours and this toolkit supports both platforms: util-linux takes
+  `script -qec CMD /dev/null`, BSD and macOS take `script -q /dev/null CMD`
+  and reject `-e`. The suite failed outright on macOS. It now probes for the
+  flavour rather than reading a version string.
+- **And it failed where it should have skipped.** With `script(1)` present but
+  no pty available -- a container with no `/dev/ptmx` -- the check reported a
+  bug rather than reporting that it had proved nothing. A gate that fires on
+  correct input is worse than one that misses, because it gets switched off.
+- An empty list is answered rather than asked about. Not reachable today,
+  since `open_recovery_apps` returns before prompting when nothing was
+  detected, but the text backend drew an empty list and asked which of no
+  options to pick, and bash before 4.4 -- the bash macOS ships -- errors on
+  `"${!arr[@]}"` for an empty array under `set -u`.
+
+#### Found while building it
+
+- **A wrapper that called itself.** `android_backup_dialog.sh` defined its own
+  `ui_yesno`, and pointing its body at the library gave it the same name as the
+  function it was calling. bash answers unbounded recursion with SIGSEGV, so
+  the run died with exit 139 and no message. Non-interactive handling moved
+  into the library and the wrapper is gone.
+- **A passphrase prompt that cleared the caller's traps.** Traps belong to the
+  shell, not to the function that sets one. The prompt turns echo off and needs
+  a trap so a Ctrl-C does not leave it off; `trap - INT TERM EXIT` on the way
+  out took the caller's with it. `android_backup_dialog.sh` restores the
+  phone's `stay_on_while_plugged_in` through an EXIT trap, so the cost was a
+  screen left permanently awake, and that setting survives a reboot. Whatever
+  is installed is now captured with `trap -p` and put back. It is only
+  reachable with a real terminal, so the regression test drives a pty: piped,
+  the branch never runs and the check passes without testing anything.
+- **A guard that could not match the thing it guarded.** The check for a
+  `dialog` widget called outside the UI layer was anchored on
+  `dialog --<widget>`. Every real call site in this repository is written
+  `dialog --stdout --separate-output --checklist`, with flags first, so the
+  pattern matched none of them: the call was reintroduced on purpose and the
+  check still passed.
+
 ## 2026-09-22 — v0.8.0
 
 ### Windows runs the toolkit natively, without WSL
