@@ -11,6 +11,8 @@ fi
 # shellcheck source=/dev/null
 source "$SCRIPT_HELPERS_DIR/helpers.sh"
 shlib_import deps os logging
+# shellcheck source=tools/lib/zip.sh
+source "$REPO_ROOT/tools/lib/zip.sh"
 
 case "$(get_os)" in
   linux)
@@ -45,12 +47,17 @@ case "$(get_os)" in
       print_info "  so the prompts are numbered questions instead of full-screen menus. Same questions."
       print_info "  Force either mode anywhere with: adrescue --ui dialog|text"
     fi
+    # Asked of the same function adrescue log uses, not a second probe. The
+    # second probe looked only at `tar`, which inside Git Bash is Git's GNU
+    # tar, so it announced that the bugreport would be skipped on a machine
+    # where /c/Windows/System32/tar.exe would have read it perfectly well.
     if ! command -v unzip >/dev/null 2>&1; then
-      if tar --version 2>/dev/null | head -1 | grep -qi 'bsdtar\|libarchive'; then
-        print_info "unzip: not present; bsdtar will read the bugreport zip instead."
+      if reader="$(zip_reader)"; then
+        print_info "unzip: not present; $reader will read the bugreport zip instead."
       else
-        print_warning "unzip: not present, and no bsdtar either. 'adrescue log' will skip bugreport"
-        print_warning "  extraction, which is where last_kmsg, tombstones and recovery logs live."
+        print_warning "unzip: not present, and nothing else here reads a zip. 'adrescue log' will"
+        print_warning "  skip bugreport extraction, which is where last_kmsg, tombstones and"
+        print_warning "  recovery logs live."
       fi
     fi
     ;;

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -u
 
+ANALYZE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/zip.sh
+source "$ANALYZE_SCRIPT_DIR/lib/zip.sh"
+
 CAPTURE_DIR="${1:-}"
 
 if [ -z "$CAPTURE_DIR" ] || [ ! -d "$CAPTURE_DIR" ]; then
@@ -22,61 +26,6 @@ mkdir -p "$WORK_DIR"
   printf 'Capture: %s\n' "$CAPTURE_DIR"
   printf 'Generated: %s\n\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
 } >"$REPORT"
-
-# Whatever on this machine can read a zip.
-#
-# Git for Windows ships no unzip and a GNU tar that cannot read zip archives,
-# so on Windows this step used to print "unzip not found" and skip -- and the
-# bugreport is where last_kmsg, the tombstones and the recovery logs are. The
-# report came out smaller with nothing but that one line to say why.
-#
-# Windows itself ships bsdtar as tar.exe, which does read zip. It is chosen by
-# asking the binary, not by its name: `tar` is GNU tar on Linux and inside Git
-# Bash, and bsdtar on macOS and Windows, and only one of those can do this.
-ANDROID_RESCUE_ZIP_READER=""
-zip_reader() {
-  [ -n "$ANDROID_RESCUE_ZIP_READER" ] && { printf '%s\n' "$ANDROID_RESCUE_ZIP_READER"; return 0; }
-  if command -v unzip >/dev/null 2>&1; then
-    ANDROID_RESCUE_ZIP_READER=unzip
-    printf 'unzip\n'
-    return 0
-  fi
-  local candidate
-  for candidate in bsdtar tar /c/Windows/System32/tar.exe /mnt/c/Windows/System32/tar.exe; do
-    command -v "$candidate" >/dev/null 2>&1 || continue
-    if "$candidate" --version 2>/dev/null | head -1 | grep -qi 'bsdtar\|libarchive'; then
-      ANDROID_RESCUE_ZIP_READER="$candidate"
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# zip_looks_readable <file>: is this actually a zip?
-zip_looks_readable() {
-  local reader="$1" file="$2"
-  case "$reader" in
-    unzip) unzip -t "$file" >/dev/null 2>&1 ;;
-    *)     "$reader" -tf "$file" >/dev/null 2>&1 ;;
-  esac
-}
-
-# zip_extract <reader> <zip> <dest> [pattern ...]
-zip_extract() {
-  local reader="$1" zip_file="$2" dest="$3"
-  shift 3
-  case "$reader" in
-    unzip)
-      unzip -qq -o "$zip_file" ${1+"$@"} -d "$dest" 2>/dev/null || true
-      ;;
-    *)
-      # bsdtar matches the same shell patterns against member names, but takes
-      # the destination with -C and the patterns last.
-      "$reader" -xf "$zip_file" -C "$dest" ${1+"$@"} 2>/dev/null || true
-      ;;
-  esac
-}
 
 extract_bugreport_artifacts() {
   local zip_file="$1"

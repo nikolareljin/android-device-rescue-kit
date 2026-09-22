@@ -38,13 +38,16 @@ with zipfile.ZipFile(sys.argv[1], "w") as z:
     z.writestr("FS/data/unrelated.txt", "not wanted\n")
 PY
 
-# Source just the reader, with the surrounding script's variables stubbed.
+# The library is sourced directly. It used to be sliced out of the analyzer
+# with sed, which was fragile and, worse, meant the suite could pass against a
+# copy that no longer matched what the analyzer ran.
 reader_env() {
-  WORK_DIR="$1" REPORT="$2" bash -c '
+  local work="$1" report="$2" body="$3"
+  WORK_DIR="$work" REPORT="$report" bash -c '
+    source "'"$ROOT"'/tools/lib/zip.sh"
     WORK_DIR="$WORK_DIR" REPORT="$REPORT"
-    # The functions live near the top; sourcing the whole tool would run it.
-    eval "$(sed -n "/^ANDROID_RESCUE_ZIP_READER=/,/^}$/p;/^zip_looks_readable()/,/^}$/p;/^zip_extract()/,/^}$/p;/^extract_bugreport_artifacts()/,/^}$/p" '"$ROOT"'/tools/analyze_android_capture.sh)"
-    '"$3"'
+    eval "$(sed -n "/^extract_bugreport_artifacts()/,/^}$/p" '"$ROOT"'/tools/analyze_android_capture.sh)"
+    '"$body"'
   '
 }
 
@@ -161,6 +164,40 @@ if grep -q 'No zip reader' "$WORK/report2.txt"; then
   pass
 else
   note "with no zip reader the report did not say so: $(cat "$WORK/report2.txt")"
+fi
+
+# --- one implementation, not two ---------------------------------------------
+#
+#     The installer had its own probe and it looked only at `tar`. Inside Git
+#     Bash that is Git's GNU tar, so it told the user `adrescue log` would skip
+#     the bugreport on a machine where /c/Windows/System32/tar.exe would have
+#     read it. The installer was stating something false about the tool it had
+#     just finished installing.
+
+# shellcheck disable=SC2016  # $REPO_ROOT is the literal text being searched for
+if grep -q 'source "$REPO_ROOT/tools/lib/zip.sh"' "$ROOT/scripts/install_deps.sh"; then
+  pass
+else
+  note "install_deps.sh does not use the shared zip reader"
+fi
+
+# No second probe anywhere. A `tar --version | grep bsdtar` outside the library
+# is the drift coming back.
+stray="$(grep -rn -- '--version' "$ROOT/scripts" "$ROOT/tools" "$ROOT/install.sh" 2>/dev/null \
+  | grep -i 'bsdtar\|libarchive' \
+  | grep -v '^[^:]*tools/lib/zip.sh:' || true)"
+if [ -z "$stray" ]; then
+  pass
+else
+  note "a second bsdtar probe exists outside tools/lib/zip.sh:"
+  printf '%s\n' "$stray" | sed 's/^/    /' >&2
+fi
+
+# The analyzer must not carry its own copy either.
+if grep -q 'zip_reader()' "$ROOT/tools/analyze_android_capture.sh"; then
+  note "analyze_android_capture.sh defines zip_reader again instead of sourcing it"
+else
+  pass
 fi
 
 if [ "$failures" -eq 0 ]; then
