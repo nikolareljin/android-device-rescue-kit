@@ -12,7 +12,8 @@ usage() {
   cat <<'USAGE'
 Usage: install.sh [--dry-run]
 
-Installs the Android Device Rescue Kit for Linux or macOS, for the current user
+Installs the Android Device Rescue Kit for Linux, macOS or Git Bash on
+Windows, for the current user
 only. No sudo, nothing written outside your home directory. It clones the latest
 release, installs the documented host dependencies, creates the command
 
@@ -38,9 +39,17 @@ case "${1:-}" in
   *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
 
+# install.ps1 hands over to this script, so Git Bash has to be accepted here.
+# It was not: `uname -s` under Git for Windows reports MINGW64_NT-10.0, which
+# fell into the catch-all and answered "run install.ps1 from PowerShell" to a
+# user who had just run install.ps1 from PowerShell. The native Windows install
+# could not complete at all, and nothing caught it because every Windows check
+# was a grep for a string rather than a run of the script.
+IS_WINDOWS=0
 case "$(uname -s)" in
   Linux|Darwin) ;;
-  *) printf 'Unsupported platform. On Windows, run install.ps1 from PowerShell.\n' >&2; exit 1 ;;
+  MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=1 ;;
+  *) printf 'Unsupported platform: %s\n' "$(uname -s)" >&2; exit 1 ;;
 esac
 
 if [ "$dry_run" -eq 1 ]; then
@@ -128,10 +137,22 @@ fi
 
 # scripts/bootstrap.sh is the name from 0.6.0 onwards; ./update is what older
 # releases carry, and this installer may have just checked one of those out.
+#
+# On Windows the packages came from winget before this script was reached, and
+# bootstrap's dependency step has no branch for the platform, so it would exit
+# non-zero and take the install with it under `set -e`. The submodules and
+# hooks it also does are still wanted, so the step runs and its status is
+# reported rather than being fatal.
 if [ -x "$INSTALL_DIRECTORY/scripts/bootstrap.sh" ]; then
-  "$INSTALL_DIRECTORY/scripts/bootstrap.sh"
+  bootstrap_command="$INSTALL_DIRECTORY/scripts/bootstrap.sh"
 else
-  "$INSTALL_DIRECTORY/update"
+  bootstrap_command="$INSTALL_DIRECTORY/update"
+fi
+
+if [ "$IS_WINDOWS" -eq 1 ]; then
+  "$bootstrap_command" || printf 'Dependency bootstrap reported a problem; winget installed the packages already. Continuing.\n' >&2
+else
+  "$bootstrap_command"
 fi
 
 if [ -x "$INSTALL_DIRECTORY/scripts/link_launchers.sh" ]; then

@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 BACKUP_ROOT="${1:-}"
 
 require_tool adb || exit 1
-check_if_dialog_installed || exit 1
+require_dialog || exit 1
 MESSAGE_HEIGHT=$((DIALOG_HEIGHT < 12 ? DIALOG_HEIGHT : 12))
 MESSAGE_WIDTH=$((DIALOG_WIDTH < 78 ? DIALOG_WIDTH : 78))
 LIST_HEIGHT=$((DIALOG_HEIGHT > 10 ? DIALOG_HEIGHT - 8 : 8))

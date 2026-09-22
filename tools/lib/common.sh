@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 
 ANDROID_RESCUE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# Git Bash on Windows runs on the MSYS2 runtime, which rewrites arguments that
+# look like POSIX paths into Windows ones before a native .exe sees them. adb
+# is a native .exe, so `adb shell ls /sdcard` reaches the phone as
+# `ls C:/Program Files/Git/sdcard`. The phone answers "no such file" and it
+# reads as a device fault rather than a tooling one.
+#
+# Excluded by prefix, not disabled outright. Blanket MSYS_NO_PATHCONV would
+# also stop the conversion of the local destination in
+# `adb pull /sdcard/DCIM/x.jpg /c/Users/me/backup`, which native adb does need
+# as a Windows path. Only the device side must survive untouched.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ANDROID_RESCUE_DEVICE_PATHS='/sdcard;/storage;/data;/system;/mnt/sdcard'
+    if [ -n "${MSYS2_ARG_CONV_EXCL:-}" ]; then
+      export MSYS2_ARG_CONV_EXCL="$MSYS2_ARG_CONV_EXCL;$ANDROID_RESCUE_DEVICE_PATHS"
+    else
+      export MSYS2_ARG_CONV_EXCL="$ANDROID_RESCUE_DEVICE_PATHS"
+    fi
+    ;;
+esac
 SCRIPT_HELPERS_DIR="${SCRIPT_HELPERS_DIR:-$ANDROID_RESCUE_ROOT/scripts/script-helpers}"
 # Exported so a script that sources this file can tell whether the real helper
 # library loaded or the fallback definitions below are in use.
@@ -40,6 +61,38 @@ require_tool() {
     print_error "$1 is required. Run scripts/install_deps.sh or install it manually."
     return 1
   fi
+}
+
+# The dialog gate every interactive tool goes through.
+#
+# Defined out here, after the helpers have loaded, rather than inside the
+# fallback branch above: script-helpers exports its own
+# check_if_dialog_installed, so anything written in that branch is invisible on
+# every machine where the submodule is checked out -- which is every
+# development clone, and the only ones left to test it are the ones that cannot
+# run it. A guard that cannot reach what it guards looks exactly like a working
+# guard.
+#
+# Git for Windows ships a trimmed MSYS2 userland with no package manager, so
+# there is nothing there to install dialog with. `data` and `restore` are the
+# only two commands that need it. Saying "run scripts/install_deps.sh" would
+# send the user to a script whose only answer for this platform is
+# "Unsupported OS", which reads as a broken toolkit instead of a known limit.
+require_dialog() {
+  if ! command -v dialog >/dev/null 2>&1; then
+    case "$(uname -s 2>/dev/null)" in
+      MINGW*|MSYS*|CYGWIN*)
+        print_error "dialog is not available under Git Bash, so this command cannot run natively on Windows."
+        printf '  probe, photos, log, prompt and verify need no dialog and do work here.\n' >&2
+        printf '  For this one, install into WSL instead:\n' >&2
+        printf '    & ([scriptblock]::Create((irm %s))) -UseWsl\n' \
+          'https://raw.githubusercontent.com/nikolareljin/android-device-rescue-kit/main/install.ps1' >&2
+        printf '  See docs/installation.md, "The WSL fallback".\n' >&2
+        return 1
+        ;;
+    esac
+  fi
+  check_if_dialog_installed
 }
 
 # --- device reachability ---------------------------------------------------

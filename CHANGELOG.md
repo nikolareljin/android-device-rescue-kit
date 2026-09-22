@@ -3,6 +3,86 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.8.0
+
+### Windows runs the toolkit natively, without WSL
+
+Deciding ADR: Windows uses the bash that Git for Windows already ships, against
+native Android platform tools. WSL 2 is a virtual machine and its `adb` cannot
+see a USB device without `usbipd-win` and a per-session attach from an elevated
+prompt. That is setup performed under time pressure, before a rescue can start,
+on a machine the operator may not own. Native `adb.exe` needs none of it.
+
+- **A Windows clone could not run at all.** There was no `.gitattributes`, and
+  Git for Windows defaults to `core.autocrlf=true`, so every script arrived
+  with CRLF and bash answered `/usr/bin/env: 'bash\r': No such file or
+  directory` on the first command typed. Nothing in that message says "line
+  endings". Shell files are pinned to LF, `install.ps1` to CRLF.
+- **Device paths survive MSYS argument conversion.** Git Bash rewrites
+  POSIX-looking arguments into Windows paths before a native `.exe` sees them,
+  so `adb shell ls /sdcard` arrived at the phone as
+  `ls C:/Program Files/Git/sdcard` and the phone answered "no such file" for a
+  folder that is plainly there. `/sdcard`, `/storage`, `/data`, `/system` and
+  `/mnt/sdcard` are excluded by prefix rather than conversion being switched
+  off, because the local destination in `adb pull <device> <local>` does still
+  need converting.
+- The site's screenshot section no longer explains how the pictures are made.
+  That belongs in the README, where a contributor looks; a reader deciding
+  whether this tool can save their photos does not need it.
+- A Ko-fi link, in three places that stay out of the way: a collapsed block
+  under the hero that opens only if someone opens it, the footer of both pages,
+  and a badge at the end of the README, plus a `FUNDING.yml` for the
+  repository's Sponsor button. Nothing in the tool itself asks for anything.
+  Someone recovering a failing phone is not an audience to sell to.
+- **`install.ps1` installs native tools through winget**: Git for Windows,
+  Android platform tools, ripgrep and GnuPG, then hands over to the same
+  installer Linux and macOS use. It refreshes `PATH` in-process, because winget
+  updates it for new processes only and the first install otherwise reports
+  every tool missing that it just installed. It writes a `.cmd` shim so
+  `adrescue` works from PowerShell as well as from Git Bash. `-DryRun` changes
+  nothing; `-UseWsl` keeps the old path for anyone who wants it, and says what
+  usbipd-win will cost them.
+- **`data` and `restore` do not run natively, and now say so.** Both are built
+  on `dialog`, and Git for Windows ships a trimmed MSYS2 userland with no
+  package manager to install it with. They stop with the limit and the WSL
+  alternative, instead of being sent to `scripts/install_deps.sh`, whose only
+  answer for the platform was "Unsupported OS". Everything else -- `probe`,
+  `photos`, `log`, `prompt`, `verify`, `config`, `update` -- runs there.
+
+#### Found by reviewing the above before it shipped
+
+Every Windows check in the first draft was a grep for a string in a file, and
+four of them passed over code that could not work. The suite now runs
+`install.sh` and `scripts/link_launchers.sh` under a stubbed `uname`, and each
+of these was re-broken on purpose to confirm the new check fails.
+
+- **The native install could not finish.** `install.ps1` hands over to
+  `install.sh`, whose platform gate accepted only `Linux` and `Darwin`. Git
+  Bash reports `MINGW64_NT-10.0`, so it fell to the catch-all and answered
+  "On Windows, run install.ps1 from PowerShell" -- to someone who had just run
+  install.ps1 from PowerShell. The run aborted before the shim was written.
+- **The `.cmd` shim dropped every argument.** It was built with `$*`, which is
+  a shell construct: `cmd.exe` passes it through untouched and bash then
+  expands it against its own empty argument list. `adrescue probe` arrived as a
+  bare `adrescue` and printed help. It now forwards `%*` into `"$@"`, which
+  also keeps a path with spaces in one piece.
+- **The shim could have been pointed at WSL.** The fallback for finding bash
+  was `Get-Command bash`, which on any machine with WSL resolves to
+  `C:\Windows\System32\bash.exe` -- the one interpreter this whole decision
+  exists to avoid, chosen silently and only on the machines that have it. bash
+  is now located beside `git.exe`, or in one of the known install roots.
+- **The launchers would have been broken copies.** Git for Windows does not
+  enable symlinks by default and `ln -s` copies instead. `adrescue` finds its
+  installation by following its own symlink chain; with a copy there is no
+  chain, the root resolves to `~/.local/bin`, and every `tools/` lookup misses
+  -- the bug the symlink resolution was written to fix, returning through a
+  different door. The link is now checked after it is made, and a wrapper
+  script is written when it turns out not to be one.
+- **`irm ... | iex -UseWsl` is not valid PowerShell.** `iex` takes its command
+  from the pipeline and has no parameters to pass a switch to, so the
+  documented way to reach the WSL fallback, and `-DryRun`, both failed. The
+  guide now shows the scriptblock form.
+
 ## 2026-09-22 — v0.7.1
 
 ### No device identifiers in the repository
