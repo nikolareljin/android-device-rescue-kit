@@ -632,6 +632,49 @@ check "the parent bar steps aside for the photo tool" "3" \
   "$(grep -c OPENED "$WORK/gauges.txt")"
 rm -f "$BIN/adb"; mv "$BIN/adb.real" "$BIN/adb"
 
+# --- an unreadable app list is not "no managers installed" -----------------
+#
+#     From a real run: adb dropped the device for one command, apps.txt came
+#     back empty, and every has_package answered "no". The manifest recorded
+#     "Recovery apps detected: 0" for a phone that had them, and the owner was
+#     never offered the export step.
+
+cp "$BIN/adb" "$WORK/adb.orig"
+cat >"$BIN/adb" <<MOCK
+#!/usr/bin/env bash
+case "\$*" in
+  "shell cmd package list packages"*)
+      printf 'adb: no devices/emulators found\n' >&2; exit 1 ;;
+esac
+exec "$WORK/adb.orig" "\$@"
+MOCK
+chmod +x "$BIN/adb"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$BIN/dialog"; chmod +x "$BIN/dialog"
+
+BKA="$WORK/backup_applist"; mkdir -p "$BKA"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BKA" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/outa.txt" 2>&1 )
+check "an unreadable app list is reported as a failure" "1" \
+  "$(grep -c 'FAILED recovery app detection' "$BKA/backup_manifest.txt")"
+check "and not as 'none detected'" "0" \
+  "$(grep -c 'SKIPPED opening recovery apps: none detected' "$BKA/backup_manifest.txt")"
+check "the guidance file says so plainly" "1" \
+  "$(grep -c 'installed-app list could not be read' "$BKA/recovery_profile/recovery_actions.txt")"
+check "the manifest records that the list was unusable" "1" \
+  "$(grep -c 'app list usable: 0' "$BKA/backup_manifest.txt")"
+
+# A readable list must not be reported as a failure.
+cp "$WORK/adb.orig" "$BIN/adb"; chmod +x "$BIN/adb"
+BKB="$WORK/backup_applist_ok"; mkdir -p "$BKB"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BKB" \
+    --recovery-profile --no-encrypt --non-interactive --select recovery_profile \
+    >"$WORK/outb.txt" 2>&1 )
+check "a readable list is not reported as a failure" "0" \
+  "$(grep -c 'FAILED recovery app detection' "$BKB/backup_manifest.txt")"
+check "and the list is marked usable" "1" \
+  "$(grep -c 'app list usable: 1' "$BKB/backup_manifest.txt")"
+
 if [ "$FAILURES" -eq 0 ]; then
   printf 'backup_flows: %d checks passed\n' "$TESTS"
 else

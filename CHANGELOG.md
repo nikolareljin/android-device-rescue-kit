@@ -29,6 +29,21 @@ notes from it and matches nothing else.
 - The photos category shells out to a tool that draws its own gauge, so the
   outer bar steps aside for it and returns afterwards. There is never more
   than one dialog on the terminal.
+- An unreadable installed-app list is no longer reported as "no password
+  manager installed". Seen on a real run: adb dropped the device for one
+  command, `apps.txt` came back empty, every lookup answered "no", and the
+  manifest recorded "Recovery apps detected: 0" for a phone that had them --
+  so the owner was never offered the export step. It is now a named failure,
+  and the guidance file says the list could not be read.
+- A mistyped passphrase no longer throws the encrypted archive away. Two boxes
+  typed blind at the end of a long run got two attempts more before the
+  profile is given up on.
+- `adb backup` asks the owner to unlock the phone and confirm on the handset.
+  That instruction was hidden behind the gauge, so the run looked hung. The bar
+  steps aside for it, as it does for the photo tool.
+- "Skipping missing path" warnings no longer tear the gauge. A phone without
+  WhatsApp Business or Snapchat produces a dozen of them, and they were written
+  straight to the terminal underneath the bar.
 - If `dialog` itself dies mid-run, the copy carries on. Writing to a gauge
   whose reader has gone raises `SIGPIPE`, and its default action killed the
   whole script: exit 141, no report, no missing-files list, and the temporary
