@@ -76,7 +76,7 @@ done < <(git ls-files)
 #     rewrite happens when the MSYS2 runtime executes a native .exe, so on
 #     Linux there is nothing to rewrite and the mock adb is a shell script
 #     anyway. An assertion about a converted argument would neither pass nor
-#     fail here, which is worse than absent -- six green checks under a
+#     fail here, which is worse than absent -- nine green checks under a
 #     heading that says "conversion" read as conversion being covered.
 #
 #     Proving the conversion needs a windows-latest job. Tracked separately;
