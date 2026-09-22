@@ -70,6 +70,17 @@ done < <(git ls-files)
 #     before a native .exe sees them, so `adb shell ls /sdcard` arrives as
 #     `ls C:/Program Files/Git/sdcard`. The phone answers "no such file" and
 #     it reads as a device fault.
+#
+#     What follows checks that MSYS2_ARG_CONV_EXCL is set, and nothing more.
+#     It does not check that a path survives conversion, and it cannot: the
+#     rewrite happens when the MSYS2 runtime executes a native .exe, so on
+#     Linux there is nothing to rewrite and the mock adb is a shell script
+#     anyway. An assertion about a converted argument would neither pass nor
+#     fail here, which is worse than absent -- six green checks under a
+#     heading that says "conversion" read as conversion being covered.
+#
+#     Proving the conversion needs a windows-latest job. Tracked separately;
+#     until it exists, this section's guarantee is the variable only.
 
 msys_env() {
   local uname_out="$1"
