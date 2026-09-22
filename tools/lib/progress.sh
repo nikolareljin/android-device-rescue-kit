@@ -151,6 +151,45 @@ progress_task() {
     fi
 }
 
+progress_active() { [ "$PROGRESS_ACTIVE" -eq 1 ]; }
+
+# A stretch of the bar handed to one unit of work, when that work reports its
+# own percentage rather than a count: an adb pull of a whole directory, say.
+progress_band() {
+    local base="${2:-0}" span="${3:-100}"
+    PROGRESS_PHASE="$1"
+    PROGRESS_TOTAL=0
+    if [ "$base" -lt "$PROGRESS_FLOOR" ]; then
+        span=$((base + span - PROGRESS_FLOOR))
+        [ "$span" -lt 0 ] && span=0
+        base="$PROGRESS_FLOOR"
+    fi
+    PROGRESS_BASE="$base"
+    PROGRESS_SPAN="$span"
+    PROGRESS_PCT="$base"
+    PROGRESS_LAST_DRAWN=-1
+    if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
+        progress_draw ""
+    else
+        print_info "$PROGRESS_PHASE"
+    fi
+}
+
+# Progress reported by the work itself, 0-100, mapped into the current band.
+# Callable from a subshell: it only draws. The percentage it sets does not
+# survive back to the caller, which is why bands are laid out in advance.
+progress_within() {
+    local pct="$1" detail="${2:-}"
+    [ "$PROGRESS_ACTIVE" -eq 1 ] || return 0
+    PROGRESS_PCT=$((PROGRESS_BASE + pct * PROGRESS_SPAN / 100))
+    [ "$PROGRESS_PCT" -gt 100 ] && PROGRESS_PCT=100
+    [ "$PROGRESS_PCT" -lt "$PROGRESS_FLOOR" ] && PROGRESS_PCT="$PROGRESS_FLOOR"
+    if [ "$PROGRESS_PCT" -ne "$PROGRESS_LAST_DRAWN" ]; then
+        PROGRESS_LAST_DRAWN="$PROGRESS_PCT"
+        progress_draw "$detail"
+    fi
+}
+
 progress_step() {
     local detail="${1:-}"
     PROGRESS_DONE=$((PROGRESS_DONE + 1))

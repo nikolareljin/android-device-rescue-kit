@@ -28,7 +28,7 @@ trap 'rm -rf "$WORK"' EXIT
 DEVICE="$WORK/device"
 BIN="$WORK/bin"
 mkdir -p "$BIN" "$DEVICE/storage/emulated/0/Download" "$DEVICE/storage/emulated/0/Documents"
-printf 'name,url,username,password\nbank,https://b.example,dragana,hunter2\n' \
+printf 'name,url,username,password\nbank,https://b.example,owner,hunter2\n' \
   >"$DEVICE/storage/emulated/0/Download/passwords.csv"
 printf 'a-download\n' >"$DEVICE/storage/emulated/0/Download/file.txt"
 
@@ -570,6 +570,67 @@ check "it is not called a failure" "0" \
   "$(grep -c 'FAILED recovery profile' "$BK9/backup_manifest.txt")"
 check "and the old error text is gone" "0" \
   "$(sed 's/\x1b\[[0-9;]*m//g' "$WORK/out9.txt" | grep -c 'Recovery profile was not completed')"
+
+# --- the shared-storage pulls draw into the gauge too ----------------------
+#
+#     adb prints its own progress -- "[ 11%] /sdcard/Download/zoom.apk: 98%" --
+#     straight to the terminal. After the photo gauge closed, the rest of the
+#     backup went back to scrolling those lines. Its percentage is now read
+#     back out and drawn in the bar instead.
+
+mv "$BIN/adb" "$BIN/adb.real"
+cat >"$BIN/adb" <<MOCK
+#!/usr/bin/env bash
+if [ "\$1" = pull ]; then
+  printf '[  7%%] /sdcard/Download/zoom.apk: 41%%\n'
+  printf '[ 53%%] /sdcard/Download/zoom.apk: 98%%\n'
+  printf '[100%%] /sdcard/Download/file.txt\n'
+fi
+exec "$BIN/adb.real" "\$@"
+MOCK
+chmod +x "$BIN/adb"
+cat >"$BIN/dialog" <<MOCK
+#!/usr/bin/env bash
+case "\$*" in
+  *--gauge*) printf 'OPENED\n' >>"$WORK/gauges.txt"; cat >>"$WORK/gauge_body.txt" ;;
+  *) exit 0 ;;
+esac
+MOCK
+chmod +x "$BIN/dialog"
+: >"$WORK/gauges.txt"; : >"$WORK/gauge_body.txt"
+
+BKG="$WORK/backup_gauge"; mkdir -p "$BKG"
+( cd "$ROOT" && ANDROID_RESCUE_PROGRESS=always bash tools/android_backup_dialog.sh "$BKG" \
+    --non-interactive --select downloads </dev/null >"$WORK/outg.txt" 2>&1 )
+check "gauge data run exits 0" "0" "$?"
+check "no raw adb progress reached the terminal" "0" \
+  "$(sed 's/\x1b\[[0-9;]*m//g' "$WORK/outg.txt" | grep -c '%\]')"
+check "exactly one gauge for the run" "1" "$(grep -c OPENED "$WORK/gauges.txt")"
+# Both the Download and the Documents pull emit the mock's progress, so the
+# value appears more than once; presence is the assertion, not the count.
+check "adb's own percentage drove the bar" "yes" \
+  "$(grep -q '^53$' "$WORK/gauge_body.txt" && echo yes || echo no)"
+check "the file being pulled is named in the bar" "1" \
+  "$(grep -c 'zoom.apk' "$WORK/gauge_body.txt" | head -1 | awk '{print ($1>0)?1:0}')"
+check "and the pull still happened" "present" \
+  "$([ -s "$BKG/shared/Download/file.txt" ] && echo present || echo absent)"
+check "recorded in the manifest" "1" \
+  "$(grep -c 'OK /sdcard/Download -> shared/Download' "$BKG/backup_manifest.txt")"
+
+# --- two dialogs must never share the terminal -----------------------------
+#
+#     The photos category shells out to android_photo_backup.sh, which draws
+#     its own gauge. Ours comes down for the duration and goes back up, so the
+#     run opens three in total rather than stacking two at once.
+
+: >"$WORK/gauges.txt"
+BKP="$WORK/backup_photos_gauge"; mkdir -p "$BKP"
+( cd "$ROOT" && ANDROID_RESCUE_PROGRESS=always bash tools/android_backup_dialog.sh "$BKP" \
+    --non-interactive --select photos,downloads </dev/null >"$WORK/outp.txt" 2>&1 )
+check "photos plus downloads exits 0" "0" "$?"
+check "the parent bar steps aside for the photo tool" "3" \
+  "$(grep -c OPENED "$WORK/gauges.txt")"
+rm -f "$BIN/adb"; mv "$BIN/adb.real" "$BIN/adb"
 
 if [ "$FAILURES" -eq 0 ]; then
   printf 'backup_flows: %d checks passed\n' "$TESTS"

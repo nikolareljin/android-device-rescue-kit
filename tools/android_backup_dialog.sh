@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=tools/lib/device_screen.sh
 source "$SCRIPT_DIR/lib/device_screen.sh"
+# shellcheck source=tools/lib/progress.sh
+source "$SCRIPT_DIR/lib/progress.sh"
 
 require_tool adb || exit 1
 # Before a destination is chosen or a single file is created. An unreachable
@@ -244,11 +246,37 @@ pull_path() {
   local source_path="$1"
   local target_name="$2"
   local target_path="$BACKUP_ROOT/shared/$target_name"
+  local pull_status=0 pct
 
   if adb_shell_exists "$source_path"; then
     mkdir -p "$(dirname "$target_path")"
-    print_info "Pulling $source_path -> $target_path"
-    if adb pull -a "$source_path" "$target_path"; then
+    if progress_active; then
+      # adb prints its own progress -- "[ 11%] /sdcard/Download/zoom.apk: 98%"
+      # -- straight to the terminal, which tore through the gauge. Its overall
+      # percentage is read back out and drawn instead.
+      #
+      # The reader runs in a subshell, which is fine here: it only draws. The
+      # pull's exit status comes from PIPESTATUS, because this script runs
+      # without pipefail on purpose.
+      progress_phase "Pulling $(basename "$source_path")" ""
+      adb pull -a "$source_path" "$target_path" 2>&1 | while IFS= read -r line; do
+        case "$line" in
+          \[*%\]*)
+            pct="${line#\[}"; pct="${pct%%%*}"; pct="${pct// /}"
+            case "$pct" in
+              ''|*[!0-9]*) ;;
+              *) progress_within "$pct" "${line#*] }" ;;
+            esac
+            ;;
+        esac
+      done
+      pull_status="${PIPESTATUS[0]}"
+    else
+      print_info "Pulling $source_path -> $target_path"
+      adb pull -a "$source_path" "$target_path"
+      pull_status=$?
+    fi
+    if [ "$pull_status" -eq 0 ]; then
       log_manifest "OK $source_path -> shared/$target_name"
     else
       log_manifest "FAILED $source_path -> shared/$target_name"
@@ -774,18 +802,49 @@ if [ "$RECOVERY_PROFILE" -eq 1 ]; then
   screen_hold_end
 fi
 
+# One gauge for the copying, opened only now: every prompt, consent and
+# passphrase is behind us, and a dialog cannot be drawn over a dialog.
+#
+# A PIPE trap and nothing else. The EXIT, INT and TERM traps belong to
+# screen_hold_end, which puts a phone's stay-awake setting back, and replacing
+# them to add cleanup here would leave a stranger's phone set to never sleep.
+# SIGPIPE is untaken, and without it a dialog that dies mid-copy kills this
+# script outright before the manifest is finished.
+trap 'progress_session_end' PIPE
+progress_session_begin "Backing up shared data"
+choice_total=0
+for choice in $CHOICES; do choice_total=$((choice_total + 1)); done
+[ "$choice_total" -gt 0 ] || choice_total=1
+choice_index=0
+
 for choice in $CHOICES; do
+  choice_base=$((choice_index * 100 / choice_total))
+  choice_span=$((100 / choice_total))
+  choice_index=$((choice_index + 1))
+  progress_band "$choice" "$choice_base" "$choice_span"
   case "$choice" in
     photos)
       # Discovery, not a path list. DCIM/Pictures/Movies misses the removable
       # card, vendor gallery folders, received app media and any folder the
       # owner made themselves. android_photo_backup.sh enumerates through
       # MediaStore and a filesystem sweep, then verifies every file it claims.
+      # android_photo_backup.sh draws its own gauge, and two dialogs cannot
+      # share one terminal. Ours comes down for the duration and goes back up
+      # afterwards, so there is always exactly one bar on screen.
+      photos_resume=0
+      if progress_active; then
+        progress_session_end
+        photos_resume=1
+      fi
       if "$SCRIPT_DIR/android_photo_backup.sh" "$BACKUP_ROOT"; then
         log_manifest "OK photos verified (see photos_report.txt)"
       else
         log_manifest "FAILED photos incomplete (see missing_photos.txt)"
         BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      fi
+      if [ "$photos_resume" -eq 1 ]; then
+        progress_session_begin "Backing up shared data"
+        progress_band "$choice" "$choice_base" "$choice_span"
       fi
       ;;
     downloads)
@@ -829,6 +888,8 @@ for choice in $CHOICES; do
       ;;
   esac
 done
+
+progress_session_end
 
 cat >>"$MANIFEST" <<EOF
 

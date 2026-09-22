@@ -21,6 +21,14 @@ notes from it and matches nothing else.
   forwards, across the whole run: it never goes backwards, even when a retry
   round sends the verification pass round again, because a bar that goes
   backwards reads as something having gone wrong at the worst possible moment.
+- The shared-storage copies draw into the gauge as well. `adb` prints its own
+  progress -- `[ 11%] /sdcard/Download/zoom.apk: 98%` -- straight to the
+  terminal, so once the photo bar closed the rest of the backup went back to
+  scrolling raw output. That percentage is now read back out and drawn in the
+  bar, with the file being pulled named beneath it.
+- The photos category shells out to a tool that draws its own gauge, so the
+  outer bar steps aside for it and returns afterwards. There is never more
+  than one dialog on the terminal.
 - If `dialog` itself dies mid-run, the copy carries on. Writing to a gauge
   whose reader has gone raises `SIGPIPE`, and its default action killed the
   whole script: exit 141, no report, no missing-files list, and the temporary
