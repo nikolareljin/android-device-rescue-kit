@@ -10,6 +10,10 @@
 #
 # Real handsets are named in .env, which is gitignored. Nothing tracked may
 # carry one, so this fails on the shapes the common vendors use.
+#
+# This file is not exempt from its own scan. The first version exempted itself
+# and quoted the serial it existed to remove, in a comment explaining the
+# pattern: the check passed while the identifier was still in the tree.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,33 +35,50 @@ root = sys.argv[1]
 files = subprocess.run(["git", "-C", root, "ls-files"],
                        capture_output=True, text=True).stdout.split()
 
-ALLOW = ("FAKEPHONE0001", "MOCKSERIAL", "CUSTOMSERIAL", "TEST_SERIAL")
-SKIP_PREFIX = ("scripts/script-helpers/", "scripts/ci-helpers/")
-SKIP_FILES = ("env.example", "tests/test_no_device_identifiers.sh")
+# Tokens that are deliberately fake. They are cut out of a line before it is
+# scanned, rather than excusing the whole line: "FAKEPHONE0001 <real serial>"
+# would otherwise pass, and an allowlist that waves through a line is the
+# easiest way to smuggle one in.
+ALLOW = ("FAKEPHONE0001", "MOCKSERIAL", "CUSTOMSERIAL42", "CUSTOMSERIAL",
+         "ANDROID_RESCUE_TEST_SERIAL", "TEST_SERIAL")
 
-# Samsung-style: R plus ten uppercase alphanumerics, at least two of them
-# digits, which is what separates R5CT2036VLW from a shouted English word.
+# The vendored clones are not this repository's to police.
+SKIP_PREFIX = ("scripts/script-helpers/", "scripts/ci-helpers/")
+
+# Nothing is exempt. This file used to exempt itself, and carried the very
+# serial it was written to remove, in a comment explaining the pattern. The
+# check reported a clean tree while the identifier sat in the tree.
+BINARY_SUFFIX = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".gz",
+                 ".zip", ".gpg", ".woff", ".woff2")
+
 samsung = re.compile(r"\bR[0-9A-Z]{10}\b")
-# adb also reports 16-hex-digit ids, and emulator-NNNN.
 hexid = re.compile(r"\b[0-9a-f]{16}\b")
 emulator = re.compile(r"\bemulator-[0-9]{4}\b")
 
 hits = []
 for rel in files:
-    if rel.startswith(SKIP_PREFIX) or rel in SKIP_FILES:
+    if rel.startswith(SKIP_PREFIX):
+        continue
+    if rel.lower().endswith(BINARY_SUFFIX):
         continue
     try:
         text = open(f"{root}/{rel}", encoding="utf-8").read()
-    except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+    except FileNotFoundError:
+        continue
+    except (UnicodeDecodeError, IsADirectoryError):
+        # Not skipped quietly: an unreadable tracked file is exactly where one
+        # would hide.
+        hits.append((rel, 0, "unreadable as text and not a known binary type"))
         continue
     for n, line in enumerate(text.splitlines(), 1):
-        if any(a in line for a in ALLOW):
-            continue
-        for m in samsung.finditer(line):
+        scrubbed = line
+        for allowed in ALLOW:
+            scrubbed = scrubbed.replace(allowed, "")
+        for m in samsung.finditer(scrubbed):
             if sum(c.isdigit() for c in m.group()) >= 2:
                 hits.append((rel, n, m.group()))
         for rx in (hexid, emulator):
-            for m in rx.finditer(line):
+            for m in rx.finditer(scrubbed):
                 hits.append((rel, n, m.group()))
 
 for rel, n, found in hits:
