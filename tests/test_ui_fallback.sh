@@ -193,6 +193,7 @@ fi
 #     testing anything -- which is how it read as fine the first time.
 
 if command -v script >/dev/null 2>&1; then
+  # shellcheck disable=SC2016  # the $( ) inside must expand in the pty's shell
   trap_probe="$(printf 'secret\n' | script -qec 'ANDROID_RESCUE_UI=text bash -c "
     set -u
     source tools/lib/ui.sh
