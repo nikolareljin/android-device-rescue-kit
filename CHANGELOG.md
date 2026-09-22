@@ -43,6 +43,29 @@ asking them.
   `mkdir -p`, so restore can be driven end to end. One copy, shared by both
   suites.
 
+#### Found reviewing the above
+
+- **The backend was not decided once, though the comment said it was.** It
+  resolved on every widget call, so the answer followed `PATH`: a run that
+  gained or lost `dialog` halfway would draw a curses screen for one question
+  and a text prompt for the next. The memo also has to live outside a command
+  substitution, since `[ "$(ui_backend)" = dialog ]` takes its copy in a
+  subshell and throws it away; `ui_is_dialog` reads the variable instead.
+- **The terminal test only ran on Linux.** `script(1)` has two incompatible
+  flavours and this toolkit supports both platforms: util-linux takes
+  `script -qec CMD /dev/null`, BSD and macOS take `script -q /dev/null CMD`
+  and reject `-e`. The suite failed outright on macOS. It now probes for the
+  flavour rather than reading a version string.
+- **And it failed where it should have skipped.** With `script(1)` present but
+  no pty available -- a container with no `/dev/ptmx` -- the check reported a
+  bug rather than reporting that it had proved nothing. A gate that fires on
+  correct input is worse than one that misses, because it gets switched off.
+- An empty list is answered rather than asked about. Not reachable today,
+  since `open_recovery_apps` returns before prompting when nothing was
+  detected, but the text backend drew an empty list and asked which of no
+  options to pick, and bash before 4.4 -- the bash macOS ships -- errors on
+  `"${!arr[@]}"` for an empty array under `set -u`.
+
 #### Found while building it
 
 - **A wrapper that called itself.** `android_backup_dialog.sh` defined its own

@@ -26,20 +26,30 @@
 # that deliberately uses /dev/tty is the typed restore confirmation in
 # `adrescue`, which must not be satisfiable by a pipe at all.
 
-# Which backend is in use. Set once, so a run cannot switch halfway.
-ui_backend() {
+# Which backend is in use, decided once and then kept.
+#
+# It really is once: resolving on every call let the answer follow PATH, and a
+# run that gained or lost dialog halfway would draw a curses screen for one
+# question and a text prompt for the next. The caching has to live outside a
+# command substitution to survive -- `[ "$(ui_backend)" = dialog ]` runs in a
+# subshell, so an assignment made in there is discarded and the memo never
+# takes. That is why ui_is_dialog reads the variable rather than the output.
+UI_BACKEND="${UI_BACKEND:-}"
+
+ui_resolve_backend() {
+  [ -n "$UI_BACKEND" ] && return 0
   if [ -n "${ANDROID_RESCUE_UI:-}" ]; then
-    printf '%s\n' "$ANDROID_RESCUE_UI"
-    return 0
-  fi
-  if command -v dialog >/dev/null 2>&1; then
-    printf 'dialog\n'
+    UI_BACKEND="$ANDROID_RESCUE_UI"
+  elif command -v dialog >/dev/null 2>&1; then
+    UI_BACKEND=dialog
   else
-    printf 'text\n'
+    UI_BACKEND=text
   fi
+  return 0
 }
 
-ui_is_dialog() { [ "$(ui_backend)" = "dialog" ]; }
+ui_backend() { ui_resolve_backend; printf '%s\n' "$UI_BACKEND"; }
+ui_is_dialog() { ui_resolve_backend; [ "$UI_BACKEND" = "dialog" ]; }
 
 # Replaces check_if_dialog_installed at the top of an interactive tool. There
 # is nothing left to refuse: with dialog absent the prompts fall back instead
@@ -140,6 +150,11 @@ ui_menu() {
   while [ "$#" -ge 2 ]; do
     tags+=("$1"); descs+=("$2"); shift 2
   done
+  # Nothing to choose from is not a question. Without this the text backend
+  # draws an empty list and asks which of no options to pick, and bash before
+  # 4.4 errors on "${!tags[@]}" for an empty array under set -u, which is the
+  # bash macOS ships.
+  [ "${#tags[@]}" -eq 0 ] && return 1
   ui_dims
   if ui_is_dialog; then
     local -a args=()
@@ -187,6 +202,8 @@ ui_radiolist() {
     [ "$3" = "on" ] && default_index="$i"
     i=$((i + 1)); shift 3
   done
+  # An empty radio list has no default to offer, so there is nothing to ask.
+  [ "${#tags[@]}" -eq 0 ] && return 1
   ui_dims
   if ui_is_dialog; then
     local -a args=()
@@ -235,6 +252,9 @@ ui_checklist() {
   while [ "$#" -ge 3 ]; do
     tags+=("$1"); descs+=("$2"); state+=("$3"); shift 3
   done
+  # An empty check list is an empty selection: a finished question with no
+  # answer, which is not the same as a cancel.
+  [ "${#tags[@]}" -eq 0 ] && return 0
   ui_dims
   if ui_is_dialog; then
     local -a args=()

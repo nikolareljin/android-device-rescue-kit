@@ -22,6 +22,9 @@ note() { printf 'FAIL: %s\n' "$1" >&2; failures=$((failures + 1)); }
 # Text mode, whether or not dialog is installed on the machine running this.
 export ANDROID_RESCUE_UI=text
 
+WORK_UI="$(mktemp -d)"
+trap 'rm -rf "$WORK_UI"' EXIT
+
 ui() {
   # Answers on stdin, answer captured from stdout, prompts discarded.
   local input="$1"; shift
@@ -192,20 +195,44 @@ fi
 #     when stdin is one. Piped, the branch never runs and this passes without
 #     testing anything -- which is how it read as fine the first time.
 
-if command -v script >/dev/null 2>&1; then
+# script(1) comes in two incompatible flavours and this repository supports
+# both platforms: util-linux takes `script -qec CMD /dev/null`, BSD and macOS
+# take `script -q /dev/null CMD ARGS` and reject -e outright. Probed rather
+# than sniffed from a version string, because the probe is the thing that has
+# to work.
+pty_bash() {
+  if [ "${PTY_FLAVOUR:-}" = "gnu" ]; then
+    script -qec "bash -c '$1'" /dev/null
+  else
+    script -q /dev/null bash -c "$1"
+  fi
+}
+
+PTY_FLAVOUR=""
+if script -qec true /dev/null >/dev/null 2>&1; then
+  PTY_FLAVOUR=gnu
+elif script -q /dev/null true >/dev/null 2>&1; then
+  PTY_FLAVOUR=bsd
+fi
+
+if [ -n "$PTY_FLAVOUR" ]; then
   # shellcheck disable=SC2016  # the $( ) inside must expand in the pty's shell
-  trap_probe="$(printf 'secret\n' | script -qec 'ANDROID_RESCUE_UI=text bash -c "
+  trap_probe="$(printf 'secret\n' | pty_bash '
     set -u
     source tools/lib/ui.sh
-    trap \"printf CALLER_EXIT_RAN\\\\n\" EXIT
-    [ -t 0 ] || { printf \"no-tty\\n\"; exit 0; }
+    trap "printf CALLER_EXIT_RAN\\n" EXIT
+    [ -t 0 ] || { printf "no-tty\n"; exit 0; }
     ui_passwordbox T t >/dev/null 2>&1
-    printf \"exit-trap-lines:%s\\n\" \"\$(trap -p EXIT | wc -l)\"
-  "' /dev/null 2>&1 | tr -d '\r')"
+    printf "exit-trap-lines:%s\n" "$(trap -p EXIT | wc -l)"
+  ' 2>&1 | tr -d '\r')"
 
   case "$trap_probe" in
     *no-tty*)
-      note "the trap check could not get a terminal, so it proved nothing" ;;
+      # A skip, not a failure. script(1) exists but could not allocate a pty --
+      # a container with no /dev/ptmx, say. The check has proved nothing, and
+      # nothing is not evidence of a bug. A gate that fires on correct input is
+      # worse than one that misses, because it gets switched off.
+      printf 'ui_fallback: script(1) gave no pty, skipping the terminal trap check\n' >&2 ;;
     *exit-trap-lines:0*)
       note "ui_passwordbox cleared the caller's EXIT trap" ;;
     *exit-trap-lines:1*)
@@ -219,10 +246,96 @@ if command -v script >/dev/null 2>&1; then
       note "the trap check gave no usable answer: $(printf '%s' "$trap_probe" | tr '\n' ' ')" ;;
   esac
 else
-  printf 'ui_fallback: no script(1), skipping the terminal trap check\n' >&2
+  printf 'ui_fallback: no usable script(1), skipping the terminal trap check\n' >&2
 fi
 
-# --- backend selection ------------------------------------------------------
+# --- an empty list ----------------------------------------------------------
+#
+#     Not reachable today: open_recovery_apps returns before it prompts when
+#     nothing was detected. It is guarded anyway, because the library is what
+#     the next caller uses, the text backend otherwise drew an empty list and
+#     asked which of no options to pick, and bash before 4.4 -- the bash macOS
+#     ships -- errors on "${!arr[@]}" for an empty array under set -u.
+
+out="$(ui '' ui_checklist "Pick" "nothing here")"
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+  pass
+else
+  note "an empty checklist gave rc=$rc out='$out'; wanted 0 and nothing"
+fi
+
+if ui_rc '' ui_menu "Pick" "nothing here"; then
+  note "an empty menu exited 0, as though something had been chosen"
+else
+  pass
+fi
+
+if ui_rc '' ui_radiolist "Pick" "nothing here"; then
+  note "an empty radiolist exited 0, as though something had been chosen"
+else
+  pass
+fi
+
+# It must not have prompted at all.
+err="$(ui_err '' ui_checklist "Pick" "nothing here")"
+if printf '%s' "$err" | grep -q 'Numbers to toggle'; then
+  note "an empty checklist still asked the user to toggle nothing"
+else
+  pass
+fi
+
+# --- the backend is decided once --------------------------------------------
+#
+#     Resolved per call, the answer followed PATH: a run that gained or lost
+#     dialog halfway would draw a curses screen for one question and a text
+#     prompt for the next. The memo has to live outside a command substitution
+#     or it is discarded with the subshell.
+
+probe_dir="$WORK_UI/withdialog"
+mkdir -p "$probe_dir"
+printf '#!/bin/sh\nexit 0\n' >"$probe_dir/dialog"
+chmod +x "$probe_dir/dialog"
+clean_dir="$WORK_UI/nodialog"
+mkdir -p "$clean_dir"
+ln -sf "$(command -v bash)" "$clean_dir/bash"
+
+# Driven the way the widgets drive it. `$(ui_backend)` cannot be used for this:
+# a command substitution is a subshell, so the memo it takes is discarded with
+# it and the next call resolves again. That is exactly why ui_is_dialog reads
+# the variable instead of the output, and the test has to match.
+got="$(unset ANDROID_RESCUE_UI; bash -c "
+  set -u
+  source '$ROOT/tools/lib/ui.sh'
+  PATH='$clean_dir'
+  ui_is_dialog && first=dialog || first=text
+  PATH='$probe_dir:$clean_dir'
+  ui_is_dialog && second=dialog || second=text
+  printf '%s,%s\n' \"\$first\" \"\$second\"
+")"
+if [ "$got" = "text,text" ]; then
+  pass
+else
+  note "the backend changed with PATH mid-run: $got"
+fi
+
+# And the other direction, so this is not just "text always wins".
+got="$(unset ANDROID_RESCUE_UI; bash -c "
+  set -u
+  source '$ROOT/tools/lib/ui.sh'
+  PATH='$probe_dir:$clean_dir'
+  ui_is_dialog && first=dialog || first=text
+  PATH='$clean_dir'
+  ui_is_dialog && second=dialog || second=text
+  printf '%s,%s\n' \"\$first\" \"\$second\"
+")"
+if [ "$got" = "dialog,dialog" ]; then
+  pass
+else
+  note "the backend did not stay on dialog once chosen: $got"
+fi
+
+# --- backend selection ---# --- backend selection ------------------------------------------------------
 
 if [ "$(ANDROID_RESCUE_UI=text bash -c 'source tools/lib/ui.sh; ui_backend')" = "text" ]; then
   pass
