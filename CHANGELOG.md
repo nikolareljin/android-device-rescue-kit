@@ -50,6 +50,15 @@ asking them.
   function it was calling. bash answers unbounded recursion with SIGSEGV, so
   the run died with exit 139 and no message. Non-interactive handling moved
   into the library and the wrapper is gone.
+- **A passphrase prompt that cleared the caller's traps.** Traps belong to the
+  shell, not to the function that sets one. The prompt turns echo off and needs
+  a trap so a Ctrl-C does not leave it off; `trap - INT TERM EXIT` on the way
+  out took the caller's with it. `android_backup_dialog.sh` restores the
+  phone's `stay_on_while_plugged_in` through an EXIT trap, so the cost was a
+  screen left permanently awake, and that setting survives a reboot. Whatever
+  is installed is now captured with `trap -p` and put back. It is only
+  reachable with a real terminal, so the regression test drives a pty: piped,
+  the branch never runs and the check passes without testing anything.
 - **A guard that could not match the thing it guarded.** The check for a
   `dialog` widget called outside the UI layer was anchored on
   `dialog --<widget>`. Every real call site in this repository is written

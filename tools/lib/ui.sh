@@ -146,7 +146,7 @@ ui_menu() {
     local i
     for i in "${!tags[@]}"; do args+=("${tags[$i]}" "${descs[$i]}"); done
     dialog --stdout --title "$title" --menu "$text" \
-      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" "${args[@]}"
+      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" ${args[@]+"${args[@]}"}
     return $?
   fi
 
@@ -198,7 +198,7 @@ ui_radiolist() {
       fi
     done
     dialog --stdout --title "$title" --radiolist "$text" \
-      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" "${args[@]}"
+      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" ${args[@]+"${args[@]}"}
     return $?
   fi
 
@@ -243,7 +243,7 @@ ui_checklist() {
       args+=("${tags[$i]}" "${descs[$i]}" "${state[$i]}")
     done
     dialog --stdout --separate-output --title "$title" --checklist "$text" \
-      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" "${args[@]}"
+      "$DIALOG_HEIGHT" "$DIALOG_WIDTH" "$UI_LIST_HEIGHT" ${args[@]+"${args[@]}"}
     return $?
   fi
 
@@ -324,17 +324,29 @@ ui_passwordbox() {
   # Echo is restored through a trap as well as on the normal path: a Ctrl-C at
   # a passphrase prompt would otherwise leave the terminal with echo off, and
   # the user's next command is invisible as they type it.
+  local saved_traps=""
   if [ -t 0 ]; then
     saved="$(stty -g 2>/dev/null || true)"
-    # shellcheck disable=SC2064  # $saved must expand now, not when the trap runs
-    [ -n "$saved" ] && trap "stty '$saved' 2>/dev/null; trap - INT TERM EXIT" INT TERM EXIT
-    stty -echo 2>/dev/null || true
+    if [ -n "$saved" ]; then
+      # Traps are the shell's, not this function's. `trap - INT TERM EXIT` on
+      # the way out would clear the caller's, and android_backup_dialog.sh
+      # restores the phone's stay_on_while_plugged_in setting through an EXIT
+      # trap -- clearing it leaves the screen permanently awake, a change to
+      # the phone that survives a reboot. So whatever is installed is captured
+      # first and put back verbatim.
+      saved_traps="$(trap -p INT TERM EXIT)"
+      # shellcheck disable=SC2064  # $saved must expand now, not when it fires
+      trap "stty '$saved' 2>/dev/null" INT TERM EXIT
+      stty -echo 2>/dev/null || true
+    fi
   fi
   read -r reply
   local rc=$?
   if [ -n "$saved" ]; then
     stty "$saved" 2>/dev/null || true
     trap - INT TERM EXIT
+    # Empty when the caller had none, which is the no-op it looks like.
+    [ -n "$saved_traps" ] && eval "$saved_traps"
   fi
   printf '\n' >&2
   [ "$rc" -eq 0 ] || return 1

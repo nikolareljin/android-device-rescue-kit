@@ -179,6 +179,48 @@ else
   pass
 fi
 
+# --- the passphrase prompt leaves the caller's traps alone ------------------
+#
+#     Traps belong to the shell, not to the function that sets one. The prompt
+#     turns terminal echo off and needs a trap so a Ctrl-C does not leave it
+#     off, and `trap - INT TERM EXIT` on the way out cleared the caller's too.
+#     android_backup_dialog.sh restores the phone's stay_on_while_plugged_in
+#     through an EXIT trap: losing it leaves the screen permanently awake, and
+#     that setting survives a reboot.
+#
+#     Only reachable with a real terminal, because the trap is installed only
+#     when stdin is one. Piped, the branch never runs and this passes without
+#     testing anything -- which is how it read as fine the first time.
+
+if command -v script >/dev/null 2>&1; then
+  trap_probe="$(printf 'secret\n' | script -qec 'ANDROID_RESCUE_UI=text bash -c "
+    set -u
+    source tools/lib/ui.sh
+    trap \"printf CALLER_EXIT_RAN\\\\n\" EXIT
+    [ -t 0 ] || { printf \"no-tty\\n\"; exit 0; }
+    ui_passwordbox T t >/dev/null 2>&1
+    printf \"exit-trap-lines:%s\\n\" \"\$(trap -p EXIT | wc -l)\"
+  "' /dev/null 2>&1 | tr -d '\r')"
+
+  case "$trap_probe" in
+    *no-tty*)
+      note "the trap check could not get a terminal, so it proved nothing" ;;
+    *exit-trap-lines:0*)
+      note "ui_passwordbox cleared the caller's EXIT trap" ;;
+    *exit-trap-lines:1*)
+      pass
+      case "$trap_probe" in
+        *CALLER_EXIT_RAN*) pass ;;
+        *) note "the caller's EXIT trap survived but did not run" ;;
+      esac
+      ;;
+    *)
+      note "the trap check gave no usable answer: $(printf '%s' "$trap_probe" | tr '\n' ' ')" ;;
+  esac
+else
+  printf 'ui_fallback: no script(1), skipping the terminal trap check\n' >&2
+fi
+
 # --- backend selection ------------------------------------------------------
 
 if [ "$(ANDROID_RESCUE_UI=text bash -c 'source tools/lib/ui.sh; ui_backend')" = "text" ]; then
