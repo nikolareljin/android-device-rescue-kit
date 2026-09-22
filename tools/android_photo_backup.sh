@@ -93,6 +93,14 @@ progress_session_begin "Photo and video rescue"
 trap 'progress_session_end' EXIT
 trap 'progress_session_end; exit 130' INT
 trap 'progress_session_end; exit 143' TERM
+# If dialog dies mid-run -- crashed, killed, terminal closed during an
+# hour-long copy -- the next write to the gauge raises SIGPIPE, whose default
+# action kills this script outright. Measured: exit 141, the `|| progress_...`
+# fallback on that write never evaluated, and the EXIT trap never ran, so the
+# report and the missing-files list were never written and the FIFO stayed in
+# /tmp. Handled rather than ignored: `trap '' PIPE` would be inherited as
+# ignored by adb and every other child.
+trap 'progress_session_end' PIPE
 progress_phase 'Discovering photos through MediaStore...' 2
 discover_mediastore >"$WORK_DIR/mediastore.txt" 2>/dev/null || true
 progress_phase 'Sweeping the filesystem for anything MediaStore missed...' 8

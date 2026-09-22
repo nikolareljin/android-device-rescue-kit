@@ -173,4 +173,47 @@ out="$(PATH="$WORK/bin:$PATH" ANDROID_RESCUE_PROGRESS=always bash -c '
 grep -Fq 'ok' <<<"$out" || fail 'session_end is idempotent' "$out"
 pass
 
+# The bar must never go backwards. The verification pass runs once and then
+# again after every retry round, and its band sits below the retry band, so it
+# used to jump 99 -> 75 on each round -- which reads as something having gone
+# wrong, right before someone wipes a phone.
+out="$(bash -c '
+  source "'"$ROOT"'/tools/lib/common.sh"
+  source "'"$ROOT"'/tools/lib/progress.sh"
+  PROGRESS_ACTIVE=0
+  run() { progress_task "$1" "$2" "$3" "$4" >/dev/null; printf "%s " "$PROGRESS_PCT"
+          for i in $(seq "$2"); do progress_step >/dev/null; printf "%s " "$PROGRESS_PCT"; done; }
+  run copy 4 20 55; run verify 4 75 20; run retry 2 95 4; run reverify 4 75 20
+' 2>/dev/null)"
+prev=0
+for pct in $out; do
+  [ "$pct" -ge "$prev" ] || fail "the bar went backwards: $prev -> $pct in: $out"
+  prev="$pct"
+done
+pass
+
+# A dead gauge must not take the run with it. Writing to a FIFO whose reader has
+# gone raises SIGPIPE, and its default action kills the script outright: exit
+# 141, with neither the `||` fallback on that write nor the EXIT trap running.
+cat >"$WORK/bin/dialog" <<'DEAD'
+#!/usr/bin/env bash
+exit 0
+DEAD
+chmod +x "$WORK/bin/dialog"
+out="$(PATH="$WORK/bin:$PATH" ANDROID_RESCUE_PROGRESS=always bash -c '
+  source "'"$ROOT"'/tools/lib/common.sh"
+  source "'"$ROOT"'/tools/lib/progress.sh"
+  trap "progress_session_end" PIPE
+  copied=0
+  progress_session_begin "Rescue"
+  progress_task "Copying" 40 0 100
+  i=0; while [ $i -lt 40 ]; do copied=$((copied + 1)); progress_step "f$i"; i=$((i + 1)); done
+  progress_session_end
+  printf "survived copied=%s\n" "$copied"
+' 2>&1)"
+rc=$?
+[ "$rc" -ne 141 ] || fail 'a dead gauge still kills the run with SIGPIPE' "$out"
+grep -Fq 'survived copied=40' <<<"$out" || fail 'the run must finish with its counters intact' "$out"
+pass
+
 printf 'progress: %s checks passed\n' "$checks"

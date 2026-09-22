@@ -35,6 +35,11 @@ PROGRESS_DONE=0
 PROGRESS_BASE=0
 PROGRESS_SPAN=0
 PROGRESS_NOTES=()
+# The highest percentage already shown. A bar that goes backwards reads as
+# something having gone wrong, which is the last thing to suggest to someone
+# about to wipe a phone.
+PROGRESS_FLOOR=0
+PROGRESS_SINCE_DRAW=0
 
 # ANDROID_RESCUE_PROGRESS: auto (default), never, always.
 # "always" exists so the gauge itself can be tested; a harness has no terminal,
@@ -82,6 +87,8 @@ progress_session_begin() {
     PROGRESS_LAST_DRAWN=-1
     PROGRESS_ACTIVE=0
     PROGRESS_NOTES=()
+    PROGRESS_FLOOR=0
+    PROGRESS_SINCE_DRAW=0
 
     progress_supported || return 0
 
@@ -104,7 +111,11 @@ progress_session_begin() {
 progress_phase() {
     PROGRESS_PHASE="$1"
     PROGRESS_TOTAL=0
-    [ -n "${2:-}" ] && PROGRESS_PCT="$2"
+    if [ -n "${2:-}" ]; then
+        PROGRESS_PCT="$2"
+        [ "$PROGRESS_PCT" -lt "$PROGRESS_FLOOR" ] && PROGRESS_PCT="$PROGRESS_FLOOR"
+        PROGRESS_FLOOR="$PROGRESS_PCT"
+    fi
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
         progress_draw ""
     else
@@ -115,13 +126,24 @@ progress_phase() {
 # A step of the run that can be counted. base and span place it on the session
 # bar, so the bar only ever moves forwards across the whole run.
 progress_task() {
+    local base="${3:-0}" span="${4:-100}"
     PROGRESS_PHASE="$1"
     PROGRESS_TOTAL="${2:-0}"
-    PROGRESS_BASE="${3:-0}"
-    PROGRESS_SPAN="${4:-100}"
+    # A task can be re-entered behind where the bar already is: the verification
+    # pass runs once, then again after every retry round, and its band sits
+    # below the retry band. Left alone the bar jumped 99 -> 75 on each round.
+    # The band is moved up to meet the bar and shrinks to whatever is left.
+    if [ "$base" -lt "$PROGRESS_FLOOR" ]; then
+        span=$((base + span - PROGRESS_FLOOR))
+        [ "$span" -lt 0 ] && span=0
+        base="$PROGRESS_FLOOR"
+    fi
+    PROGRESS_BASE="$base"
+    PROGRESS_SPAN="$span"
     PROGRESS_DONE=0
     PROGRESS_PCT="$PROGRESS_BASE"
     PROGRESS_LAST_DRAWN=-1
+    PROGRESS_SINCE_DRAW=0
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
         progress_draw ""
     else
@@ -140,13 +162,19 @@ progress_step() {
         [ "$PROGRESS_PCT" -gt $((PROGRESS_BASE + PROGRESS_SPAN)) ] \
             && PROGRESS_PCT=$((PROGRESS_BASE + PROGRESS_SPAN))
         [ "$PROGRESS_PCT" -gt 100 ] && PROGRESS_PCT=100
+        [ "$PROGRESS_PCT" -lt "$PROGRESS_FLOOR" ] && PROGRESS_PCT="$PROGRESS_FLOOR"
+        PROGRESS_FLOOR="$PROGRESS_PCT"
     fi
 
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
         # Redrawing for every file of several thousand is wasted work and makes
-        # the bar flicker; the percentage only ever has a hundred values.
-        if [ "$PROGRESS_PCT" -ne "$PROGRESS_LAST_DRAWN" ]; then
+        # the bar flicker; the percentage only ever has a hundred values. But a
+        # band squeezed to nothing never changes percentage, and a bar frozen on
+        # one file for minutes looks hung, so the detail line still moves.
+        PROGRESS_SINCE_DRAW=$((PROGRESS_SINCE_DRAW + 1))
+        if [ "$PROGRESS_PCT" -ne "$PROGRESS_LAST_DRAWN" ] || [ "$PROGRESS_SINCE_DRAW" -ge 25 ]; then
             PROGRESS_LAST_DRAWN="$PROGRESS_PCT"
+            PROGRESS_SINCE_DRAW=0
             progress_draw "$PROGRESS_DONE of $PROGRESS_TOTAL   $detail"
         fi
         return 0

@@ -18,7 +18,13 @@ notes from it and matches nothing else.
   to a progress bar, so the display changed shape twice in the middle of a
   rescue, and the slowest step before the copy -- a size for every one of
   several thousand files -- showed nothing at all. The bar now moves once,
-  forwards, across the whole run.
+  forwards, across the whole run: it never goes backwards, even when a retry
+  round sends the verification pass round again, because a bar that goes
+  backwards reads as something having gone wrong at the worst possible moment.
+- If `dialog` itself dies mid-run, the copy carries on. Writing to a gauge
+  whose reader has gone raises `SIGPIPE`, and its default action killed the
+  whole script: exit 141, no report, no missing-files list, and the temporary
+  pipe left behind.
 - Anything the operator still needs after the bar comes down, such as the
   discovery counts and any retry warning, is held back and printed then.
   Writing it to the terminal while the gauge owned the screen would have torn
