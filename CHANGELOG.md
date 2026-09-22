@@ -9,10 +9,20 @@ notes from it and matches nothing else.
 
 - Copying several thousand photos off a phone took an hour and reported one
   line per 250 files. There was no way to tell a slow copy from a stalled one.
-- `adrescue photos` now draws a `dialog` gauge for the three long passes: the
-  copy, the verification that re-measures every file against the phone, and
-  each retry round. It shows the percentage, the count, and the file in
-  flight.
+- `adrescue photos` now runs inside a single `dialog` gauge from start to
+  finish. Every phase reports into it: the MediaStore query, the filesystem
+  sweep, reading a size for every file, the copy, the verification that
+  re-measures each file against the phone, each retry round, and the final
+  measurement. It shows the percentage, the count, and the file in flight.
+- Those first phases used to print plain lines and only then hand the terminal
+  to a progress bar, so the display changed shape twice in the middle of a
+  rescue, and the slowest step before the copy -- a size for every one of
+  several thousand files -- showed nothing at all. The bar now moves once,
+  forwards, across the whole run.
+- Anything the operator still needs after the bar comes down, such as the
+  discovery counts and any retry warning, is held back and printed then.
+  Writing it to the terminal while the gauge owned the screen would have torn
+  the display.
 - It degrades rather than disappears. With no terminal, no `dialog`, or
   `ANDROID_RESCUE_PROGRESS=never`, the periodic lines are kept, which is what
   belongs in a log anyway. `ANDROID_RESCUE_PROGRESS=always` forces the gauge.

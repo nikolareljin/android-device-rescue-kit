@@ -1,35 +1,44 @@
 #!/usr/bin/env bash
 # SCRIPT: lib/progress.sh
-# DESCRIPTION: A dialog --gauge progress bar that degrades to plain lines.
+# DESCRIPTION: One dialog session for a whole run: phases, counted tasks, notes.
 # USAGE: source tools/lib/progress.sh
 #
-# Copying 5,399 photos off a phone takes a long time, and the only feedback was
-# one line per 250 files. That is roughly twenty lines over an hour, with no way
-# to tell a slow copy from a stalled one.
+# Copying several thousand photos off a phone takes an hour, and the only
+# feedback was one line per 250 files. Worse, the slow work before the copy --
+# querying MediaStore, sweeping the filesystem, reading a size for every file --
+# printed plain lines and only then handed the terminal to a progress bar, so
+# the display changed shape twice in the middle of a rescue.
 #
-#   progress_begin "Copying photos and videos" 5399
-#   progress_step "DCIM/Camera/IMG_0001.jpg"     # once per item
-#   progress_end
+# The session is opened once and stays open:
+#
+#   progress_session_begin "Photo and video rescue"
+#   progress_phase "Discovering photos through MediaStore..." 2
+#   progress_task  "Copying" "$total" 25 55      # base 25%, spans 55%
+#   progress_step  "DCIM/Camera/IMG_0001.jpg"    # once per item
+#   progress_note  "MediaStore: 1532, sweep: 9461"
+#   progress_session_end
 #
 # The gauge is fed through a FIFO rather than a pipe. `loop | dialog --gauge`
 # puts the loop in a subshell, so every counter it increments is lost when the
 # pipeline ends -- which for the photo backup would silently zero the copied,
-# resumed and verified totals that the run is judged by.
+# resumed and verified totals the run is judged by.
 
 PROGRESS_ACTIVE=0
-PROGRESS_TOTAL=0
-PROGRESS_DONE=0
-PROGRESS_LABEL=""
 PROGRESS_FIFO=""
 PROGRESS_PID=""
-PROGRESS_LAST_PCT=-1
+PROGRESS_TITLE=""
+PROGRESS_PHASE=""
+PROGRESS_PCT=0
+PROGRESS_LAST_DRAWN=-1
+PROGRESS_TOTAL=0
+PROGRESS_DONE=0
+PROGRESS_BASE=0
+PROGRESS_SPAN=0
+PROGRESS_NOTES=()
 
-# A gauge is only drawn when there is a terminal to draw it on and a dialog to
-# draw it with. Unattended runs, pipes and CI keep the plain lines, which are
-# also what ends up in a log worth reading afterwards.
 # ANDROID_RESCUE_PROGRESS: auto (default), never, always.
-# "always" exists so the gauge itself can be tested; a test harness has no
-# terminal, so "auto" would only ever exercise the fallback.
+# "always" exists so the gauge itself can be tested; a harness has no terminal,
+# so "auto" would only ever exercise the fallback.
 progress_supported() {
     case "${ANDROID_RESCUE_PROGRESS:-auto}" in
         never) return 1 ;;
@@ -38,35 +47,6 @@ progress_supported() {
     esac
     command -v dialog >/dev/null 2>&1 || return 1
     return 0
-}
-
-progress_begin() {
-    PROGRESS_LABEL="$1"
-    PROGRESS_TOTAL="${2:-0}"
-    PROGRESS_DONE=0
-    PROGRESS_LAST_PCT=-1
-    PROGRESS_ACTIVE=0
-
-    [ "$PROGRESS_TOTAL" -gt 0 ] || return 0
-    progress_supported || {
-        print_info "$PROGRESS_LABEL ($PROGRESS_TOTAL items)..."
-        return 0
-    }
-
-    PROGRESS_FIFO="$(mktemp -u)"
-    if ! mkfifo "$PROGRESS_FIFO" 2>/dev/null; then
-        PROGRESS_FIFO=""
-        print_info "$PROGRESS_LABEL ($PROGRESS_TOTAL items)..."
-        return 0
-    fi
-
-    dialog --title "$PROGRESS_LABEL" \
-        --gauge "Starting..." 10 "${DIALOG_WIDTH:-70}" 0 <"$PROGRESS_FIFO" &
-    PROGRESS_PID=$!
-    # Opening for write blocks until the reader is up, which is what keeps the
-    # first steps from being written into a pipe nobody is reading yet.
-    exec 9>"$PROGRESS_FIFO"
-    PROGRESS_ACTIVE=1
 }
 
 # Truncate from the left: the tail of a path identifies the file, the head is
@@ -80,20 +60,81 @@ progress_shorten() {
     fi
 }
 
+progress_draw() {
+    local detail="${1:-}"
+    [ "$PROGRESS_ACTIVE" -eq 1 ] || return 0
+    printf 'XXX\n%s\n%s\n\n%s\nXXX\n' \
+        "$PROGRESS_PCT" \
+        "$PROGRESS_PHASE" \
+        "$(progress_shorten "$detail")" >&9 2>/dev/null || progress_session_end
+}
+
+progress_session_begin() {
+    PROGRESS_TITLE="$1"
+    PROGRESS_PCT=0
+    PROGRESS_LAST_DRAWN=-1
+    PROGRESS_ACTIVE=0
+    PROGRESS_NOTES=()
+
+    progress_supported || return 0
+
+    PROGRESS_FIFO="$(mktemp -u)"
+    if ! mkfifo "$PROGRESS_FIFO" 2>/dev/null; then
+        PROGRESS_FIFO=""
+        return 0
+    fi
+
+    dialog --title "$PROGRESS_TITLE" \
+        --gauge "Starting..." 11 "${DIALOG_WIDTH:-70}" 0 <"$PROGRESS_FIFO" &
+    PROGRESS_PID=$!
+    # Opening for write blocks until the reader is up, which keeps the first
+    # updates from being written into a pipe nobody is reading yet.
+    exec 9>"$PROGRESS_FIFO"
+    PROGRESS_ACTIVE=1
+}
+
+# A step of the run with no count of its own: a query, a sweep, a merge.
+progress_phase() {
+    PROGRESS_PHASE="$1"
+    PROGRESS_TOTAL=0
+    [ -n "${2:-}" ] && PROGRESS_PCT="$2"
+    if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
+        progress_draw ""
+    else
+        print_info "$PROGRESS_PHASE"
+    fi
+}
+
+# A step of the run that can be counted. base and span place it on the session
+# bar, so the bar only ever moves forwards across the whole run.
+progress_task() {
+    PROGRESS_PHASE="$1"
+    PROGRESS_TOTAL="${2:-0}"
+    PROGRESS_BASE="${3:-0}"
+    PROGRESS_SPAN="${4:-100}"
+    PROGRESS_DONE=0
+    PROGRESS_PCT="$PROGRESS_BASE"
+    PROGRESS_LAST_DRAWN=-1
+    if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
+        progress_draw ""
+    else
+        print_info "$PROGRESS_PHASE ($PROGRESS_TOTAL items)..."
+    fi
+}
+
 progress_step() {
-    local detail="${1:-}" pct=0
+    local detail="${1:-}"
     PROGRESS_DONE=$((PROGRESS_DONE + 1))
-    [ "$PROGRESS_TOTAL" -gt 0 ] && pct=$((PROGRESS_DONE * 100 / PROGRESS_TOTAL))
+    if [ "$PROGRESS_TOTAL" -gt 0 ]; then
+        PROGRESS_PCT=$((PROGRESS_BASE + PROGRESS_DONE * PROGRESS_SPAN / PROGRESS_TOTAL))
+    fi
 
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
-        # Redrawing on every file of several thousand is wasted work and makes
+        # Redrawing for every file of several thousand is wasted work and makes
         # the bar flicker; the percentage only ever has a hundred values.
-        if [ "$pct" -ne "$PROGRESS_LAST_PCT" ] || [ -n "$detail" ]; then
-            PROGRESS_LAST_PCT="$pct"
-            printf 'XXX\n%s\n%s\n%s\nXXX\n' \
-                "$pct" \
-                "$PROGRESS_DONE of $PROGRESS_TOTAL" \
-                "$(progress_shorten "$detail")" >&9 2>/dev/null || progress_end
+        if [ "$PROGRESS_PCT" -ne "$PROGRESS_LAST_DRAWN" ]; then
+            PROGRESS_LAST_DRAWN="$PROGRESS_PCT"
+            progress_draw "$PROGRESS_DONE of $PROGRESS_TOTAL   $detail"
         fi
         return 0
     fi
@@ -103,12 +144,44 @@ progress_step() {
     fi
 }
 
-progress_end() {
+# Something the operator must still see once the bar is gone. Printing it now
+# would tear the gauge, so it is shown inside it and repeated afterwards.
+progress_note() {
+    local text="$1"
+    if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
+        PROGRESS_NOTES+=("$text")
+        progress_draw "$text"
+    else
+        print_info "$text"
+    fi
+}
+
+progress_warn() {
+    local text="$1"
+    if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
+        PROGRESS_NOTES+=("! $text")
+        progress_draw "$text"
+    else
+        print_warning "$text"
+    fi
+}
+
+progress_session_end() {
+    local note
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
         PROGRESS_ACTIVE=0
         exec 9>&-
         [ -n "$PROGRESS_PID" ] && wait "$PROGRESS_PID" 2>/dev/null
+        # Everything held back while the gauge owned the terminal. Without this
+        # the counts and any warning would exist only in the manifest.
+        for note in ${PROGRESS_NOTES+"${PROGRESS_NOTES[@]}"}; do
+            case "$note" in
+                '! '*) print_warning "${note#! }" ;;
+                *) print_info "$note" ;;
+            esac
+        done
     fi
+    PROGRESS_NOTES=()
     [ -n "$PROGRESS_FIFO" ] && rm -f "$PROGRESS_FIFO"
     PROGRESS_FIFO=""
     PROGRESS_PID=""

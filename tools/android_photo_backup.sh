@@ -79,9 +79,14 @@ discover_sweep() {
   adb shell "find $PHOTO_ROOTS -type f \\( $expr \\) 2>/dev/null" 2>/dev/null | photo_parse_find
 }
 
-print_info 'Discovering photos through MediaStore...'
+# One gauge for the whole run. The slow work before the copy -- the MediaStore
+# query, the filesystem sweep, a size for every file -- used to print plain
+# lines and only then hand the terminal to a progress bar, so the display
+# changed shape twice in the middle of a rescue.
+progress_session_begin "Photo and video rescue"
+progress_phase 'Discovering photos through MediaStore...' 2
 discover_mediastore >"$WORK_DIR/mediastore.txt" 2>/dev/null || true
-print_info 'Sweeping the filesystem for anything MediaStore missed...'
+progress_phase 'Sweeping the filesystem for anything MediaStore missed...' 8
 discover_sweep >"$WORK_DIR/sweep.txt" 2>/dev/null || true
 
 ms_count=$(wc -l <"$WORK_DIR/mediastore.txt" | tr -d ' ')
@@ -90,9 +95,10 @@ sweep_count=$(wc -l <"$WORK_DIR/sweep.txt" | tr -d ' ')
 photo_merge_index "$WORK_DIR/mediastore.txt" "$WORK_DIR/sweep.txt" >"$INDEX_FILE"
 total=$(wc -l <"$INDEX_FILE" | tr -d ' ')
 
-print_info "MediaStore: $ms_count, sweep: $sweep_count, unique after merge: $total"
+progress_note "MediaStore: $ms_count, sweep: $sweep_count, unique after merge: $total"
 
 if [ "$total" -eq 0 ]; then
+  progress_session_end
   print_warning 'No photos or videos were found on the device.'
   printf 'No photos or videos found.\nMediaStore: %s\nSweep: %s\n' "$ms_count" "$sweep_count" >"$REPORT_FILE"
   exit 0
@@ -128,8 +134,10 @@ run_batch_stat() {
 collect_device_sizes() {
   local batch=() path
   : >"$WORK_DIR/sizes.txt"
+  progress_task 'Reading a size for every file from the device...' "$total" 12 8
   while IFS= read -r path; do
     batch+=("$path")
+    progress_step "$path"
     # 200 paths of ~100 characters is ~20 KB of command line, well inside the
     # device shell's limit.
     if [ "${#batch[@]}" -ge 200 ]; then
@@ -142,7 +150,6 @@ collect_device_sizes() {
   fi
 }
 
-print_info 'Reading sizes from the device...'
 collect_device_sizes
 
 # device_size <path> -> bytes, or empty when the device did not report one.
@@ -192,13 +199,12 @@ pull_one() {
 # The loop stays in this shell. progress.sh feeds the gauge through a FIFO for
 # exactly this reason: piping into `dialog --gauge` would put the loop in a
 # subshell and throw away copied, resumed and attempted at the end of it.
-progress_begin "Copying photos and videos" "$total"
+progress_task "Copying photos and videos" "$total" 20 55
 while IFS= read -r device_path; do
   attempted=$((attempted + 1))
   pull_one "$device_path" || true
   progress_step "$device_path"
 done <"$INDEX_FILE"
-progress_end
 
 # --- verify ----------------------------------------------------------------
 
@@ -208,7 +214,7 @@ progress_end
 verify_pass() {
   local out="$1" device_path target expected actual
   : >"$out"
-  progress_begin "Verifying every copy against the phone" "$total"
+  progress_task "Verifying every copy against the phone" "$total" 75 20
   while IFS= read -r device_path; do
     progress_step "$device_path"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
@@ -226,15 +232,14 @@ verify_pass() {
       printf '%s\tsize mismatch: device %s, local %s\n' "$device_path" "$expected" "$actual" >>"$out"
     fi
   done <"$INDEX_FILE"
-  progress_end
 }
 
 attempt=1
 verify_pass "$MISSING_FILE"
 while [ -s "$MISSING_FILE" ] && [ "$attempt" -lt "$PHOTO_PULL_RETRIES" ]; do
   failed_now=$(wc -l <"$MISSING_FILE" | tr -d ' ')
-  print_warning "$failed_now file(s) failed; retry $attempt of $((PHOTO_PULL_RETRIES - 1))"
-  progress_begin "Retrying $failed_now file(s)" "$failed_now"
+  progress_warn "$failed_now file(s) failed; retry $attempt of $((PHOTO_PULL_RETRIES - 1))"
+  progress_task "Retrying $failed_now file(s)" "$failed_now" 95 4
   while IFS= read -r line; do
     device_path="${line%%$'\t'*}"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
@@ -242,7 +247,6 @@ while [ -s "$MISSING_FILE" ] && [ "$attempt" -lt "$PHOTO_PULL_RETRIES" ]; do
     pull_one "$device_path" || true
     progress_step "$device_path"
   done <"$MISSING_FILE"
-  progress_end
   attempt=$((attempt + 1))
   verify_pass "$MISSING_FILE"
 done
@@ -253,7 +257,14 @@ verified=$((total - missing))
 
 # Sum every "total" line: find -exec ... + may run wc more than once, and
 # taking only the last batch under-reported 24.8 GB as 1.4 GB.
+progress_phase 'Measuring what was written...' 99
 total_bytes=$(find "$PHOTOS_DIR" -type f -exec wc -c {} + 2>/dev/null | awk '/total$/ {s += $1} END {printf "%d", s}')
+
+# The bar comes down here, and everything held back while it owned the terminal
+# is printed: the discovery counts, and any retry warning. The summary below is
+# the part someone reads before wiping a phone, so it must not scroll past
+# inside a dialog that is about to be erased.
+progress_session_end
 
 {
   printf 'Photo and video backup\n\n'
