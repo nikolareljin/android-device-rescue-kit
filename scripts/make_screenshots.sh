@@ -25,7 +25,7 @@ SCREEN="${SCREENSHOT_SCREEN:-1440x900}"
 GEOMETRY="${SCREENSHOT_GEOMETRY:-116x36+0+0}"
 FONT_SIZE="${SCREENSHOT_FONT_SIZE:-14}"
 
-for tool in Xvfb xterm import; do
+for tool in Xvfb xterm import convert; do
   command -v "$tool" >/dev/null 2>&1 || {
     printf 'Missing %s. Install xvfb, xterm and imagemagick.\n' "$tool" >&2
     exit 1
@@ -39,6 +39,15 @@ DEST_BASE="${SCREENSHOT_DEST:-/tmp/rescue-drive}"
 # A synthetic home as well: `adrescue config` prints the path of its config
 # file, and the operator's real username has no business in documentation.
 DEMO_HOME="${SCREENSHOT_HOME:-/tmp/rescue-demo-home}"
+# These two get rm -rf'd, here and on exit. They are overridable, so check
+# they are what this script is allowed to destroy before destroying it.
+for scratch in "$DEST_BASE" "$DEMO_HOME"; do
+  case "$scratch" in
+    /tmp/?*) ;;
+    *) printf 'Refusing to use %s as scratch: must be a path under /tmp.\n' "$scratch" >&2
+       exit 2 ;;
+  esac
+done
 rm -rf "$DEST_BASE" "$DEMO_HOME"
 mkdir -p "$DEST_BASE" "$DEMO_HOME"
 DEVICE="$WORK/device"
@@ -274,6 +283,25 @@ shot "05-shared-data" 3 \
 
 shot "06-help" 2 \
   "$COMMON; cd '$ROOT'; ./adrescue --help; sleep 20"
+INDEX="$ROOT/docs/index.html"
+if [ -f "$INDEX" ] && [ "$FAILED_SHOTS" -eq 0 ]; then
+  for f in "$OUT_DIR"/*.png; do
+    base="$(basename "$f")"
+    dims="$(identify -format '%w %h' "$f" 2>/dev/null)" || continue
+    w="${dims%% *}"; h="${dims##* }"
+    python3 - "$INDEX" "$base" "$w" "$h" <<'PYEOF'
+import re, sys
+index, base, w, h = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+s = open(index).read()
+pattern = re.compile(r'(src="assets/screenshots/' + re.escape(base) + r'"[^>]*?width=")\d+("\s+height=")\d+(")')
+s2, n = pattern.subn(lambda m: m.group(1) + w + m.group(2) + h + m.group(3), s)
+if n:
+    open(index, 'w').write(s2)
+PYEOF
+  done
+  printf 'Updated the image dimensions in docs/index.html\n'
+fi
+
 if [ "$FAILED_SHOTS" -gt 0 ]; then
   printf '%s screenshot(s) failed.\n' "$FAILED_SHOTS" >&2
   exit 1
