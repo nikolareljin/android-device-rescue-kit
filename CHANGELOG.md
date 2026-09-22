@@ -3,6 +3,25 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.7.0
+
+### A progress bar for the long copies
+
+- Copying several thousand photos off a phone took an hour and reported one
+  line per 250 files. There was no way to tell a slow copy from a stalled one.
+- `adrescue photos` now draws a `dialog` gauge for the three long passes: the
+  copy, the verification that re-measures every file against the phone, and
+  each retry round. It shows the percentage, the count, and the file in
+  flight.
+- It degrades rather than disappears. With no terminal, no `dialog`, or
+  `ANDROID_RESCUE_PROGRESS=never`, the periodic lines are kept, which is what
+  belongs in a log anyway. `ANDROID_RESCUE_PROGRESS=always` forces the gauge.
+- The gauge is fed through a FIFO rather than `loop | dialog --gauge`. A piped
+  loop runs in a subshell, so every counter it increments is discarded when
+  the pipeline ends: the run would have reported "Copied this run: 0" having
+  copied everything. That number is the whole contract of this command, since
+  someone wipes a phone on the strength of it.
+
 ## 2026-09-21 — v0.6.3
 
 ### A recovery profile with no passwords in it is not a failed backup
@@ -30,6 +49,7 @@ notes from it and matches nothing else.
   (renamed from `test_backup_noninteractive.sh`) covers both attended and
   unattended runs; there was no attended coverage before, which is how this
   shipped.
+
 
 ## 2026-09-21 — v0.6.2
 

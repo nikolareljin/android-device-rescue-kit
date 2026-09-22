@@ -20,6 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=tools/lib/photo_index.sh
 source "$SCRIPT_DIR/lib/photo_index.sh"
+# shellcheck source=tools/lib/progress.sh
+source "$SCRIPT_DIR/lib/progress.sh"
 
 BACKUP_ROOT="${1:-}"
 if [ -z "$BACKUP_ROOT" ]; then
@@ -187,14 +189,16 @@ pull_one() {
   return 0
 }
 
-print_info "Copying $total photos and videos..."
+# The loop stays in this shell. progress.sh feeds the gauge through a FIFO for
+# exactly this reason: piping into `dialog --gauge` would put the loop in a
+# subshell and throw away copied, resumed and attempted at the end of it.
+progress_begin "Copying photos and videos" "$total"
 while IFS= read -r device_path; do
   attempted=$((attempted + 1))
   pull_one "$device_path" || true
-  if [ $((attempted % 250)) -eq 0 ]; then
-    print_info "  $attempted / $total"
-  fi
+  progress_step "$device_path"
 done <"$INDEX_FILE"
+progress_end
 
 # --- verify ----------------------------------------------------------------
 
@@ -204,7 +208,9 @@ done <"$INDEX_FILE"
 verify_pass() {
   local out="$1" device_path target expected actual
   : >"$out"
+  progress_begin "Verifying every copy against the phone" "$total"
   while IFS= read -r device_path; do
+    progress_step "$device_path"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
     if [ ! -f "$target" ]; then
       printf '%s\tnot copied\n' "$device_path" >>"$out"
@@ -220,6 +226,7 @@ verify_pass() {
       printf '%s\tsize mismatch: device %s, local %s\n' "$device_path" "$expected" "$actual" >>"$out"
     fi
   done <"$INDEX_FILE"
+  progress_end
 }
 
 attempt=1
@@ -227,12 +234,15 @@ verify_pass "$MISSING_FILE"
 while [ -s "$MISSING_FILE" ] && [ "$attempt" -lt "$PHOTO_PULL_RETRIES" ]; do
   failed_now=$(wc -l <"$MISSING_FILE" | tr -d ' ')
   print_warning "$failed_now file(s) failed; retry $attempt of $((PHOTO_PULL_RETRIES - 1))"
+  progress_begin "Retrying $failed_now file(s)" "$failed_now"
   while IFS= read -r line; do
     device_path="${line%%$'\t'*}"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
     rm -f "$target"
     pull_one "$device_path" || true
+    progress_step "$device_path"
   done <"$MISSING_FILE"
+  progress_end
   attempt=$((attempt + 1))
   verify_pass "$MISSING_FILE"
 done
