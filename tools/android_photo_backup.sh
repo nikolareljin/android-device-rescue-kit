@@ -20,6 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=tools/lib/photo_index.sh
 source "$SCRIPT_DIR/lib/photo_index.sh"
+# shellcheck source=tools/lib/progress.sh
+source "$SCRIPT_DIR/lib/progress.sh"
 
 BACKUP_ROOT="${1:-}"
 if [ -z "$BACKUP_ROOT" ]; then
@@ -77,9 +79,31 @@ discover_sweep() {
   adb shell "find $PHOTO_ROOTS -type f \\( $expr \\) 2>/dev/null" 2>/dev/null | photo_parse_find
 }
 
-print_info 'Discovering photos through MediaStore...'
+# One gauge for the whole run. The slow work before the copy -- the MediaStore
+# query, the filesystem sweep, a size for every file -- used to print plain
+# lines and only then hand the terminal to a progress bar, so the display
+# changed shape twice in the middle of a rescue.
+progress_session_begin "Photo and video rescue"
+# Ctrl-C during an hour-long copy must not leave the gauge holding the terminal
+# or a FIFO in /tmp. The traps live here rather than in the library: a library
+# that installs its own EXIT trap silently replaces whatever the caller had, and
+# android_backup_dialog.sh already relies on one to put a phone's screen setting
+# back. progress_session_end is idempotent, so the normal path calling it too is
+# harmless.
+trap 'progress_session_end' EXIT
+trap 'progress_session_end; exit 130' INT
+trap 'progress_session_end; exit 143' TERM
+# If dialog dies mid-run -- crashed, killed, terminal closed during an
+# hour-long copy -- the next write to the gauge raises SIGPIPE, whose default
+# action kills this script outright. Measured: exit 141, the `|| progress_...`
+# fallback on that write never evaluated, and the EXIT trap never ran, so the
+# report and the missing-files list were never written and the FIFO stayed in
+# /tmp. Handled rather than ignored: `trap '' PIPE` would be inherited as
+# ignored by adb and every other child.
+trap 'progress_session_end' PIPE
+progress_phase 'Discovering photos through MediaStore...' 2
 discover_mediastore >"$WORK_DIR/mediastore.txt" 2>/dev/null || true
-print_info 'Sweeping the filesystem for anything MediaStore missed...'
+progress_phase 'Sweeping the filesystem for anything MediaStore missed...' 8
 discover_sweep >"$WORK_DIR/sweep.txt" 2>/dev/null || true
 
 ms_count=$(wc -l <"$WORK_DIR/mediastore.txt" | tr -d ' ')
@@ -88,9 +112,10 @@ sweep_count=$(wc -l <"$WORK_DIR/sweep.txt" | tr -d ' ')
 photo_merge_index "$WORK_DIR/mediastore.txt" "$WORK_DIR/sweep.txt" >"$INDEX_FILE"
 total=$(wc -l <"$INDEX_FILE" | tr -d ' ')
 
-print_info "MediaStore: $ms_count, sweep: $sweep_count, unique after merge: $total"
+progress_note "MediaStore: $ms_count, sweep: $sweep_count, unique after merge: $total"
 
 if [ "$total" -eq 0 ]; then
+  progress_session_end
   print_warning 'No photos or videos were found on the device.'
   printf 'No photos or videos found.\nMediaStore: %s\nSweep: %s\n' "$ms_count" "$sweep_count" >"$REPORT_FILE"
   exit 0
@@ -126,8 +151,10 @@ run_batch_stat() {
 collect_device_sizes() {
   local batch=() path
   : >"$WORK_DIR/sizes.txt"
+  progress_task 'Reading a size for every file from the device...' "$total" 12 8
   while IFS= read -r path; do
     batch+=("$path")
+    progress_step "$path"
     # 200 paths of ~100 characters is ~20 KB of command line, well inside the
     # device shell's limit.
     if [ "${#batch[@]}" -ge 200 ]; then
@@ -140,7 +167,6 @@ collect_device_sizes() {
   fi
 }
 
-print_info 'Reading sizes from the device...'
 collect_device_sizes
 
 # device_size <path> -> bytes, or empty when the device did not report one.
@@ -187,13 +213,14 @@ pull_one() {
   return 0
 }
 
-print_info "Copying $total photos and videos..."
+# The loop stays in this shell. progress.sh feeds the gauge through a FIFO for
+# exactly this reason: piping into `dialog --gauge` would put the loop in a
+# subshell and throw away copied, resumed and attempted at the end of it.
+progress_task "Copying photos and videos" "$total" 20 55
 while IFS= read -r device_path; do
   attempted=$((attempted + 1))
   pull_one "$device_path" || true
-  if [ $((attempted % 250)) -eq 0 ]; then
-    print_info "  $attempted / $total"
-  fi
+  progress_step "$device_path"
 done <"$INDEX_FILE"
 
 # --- verify ----------------------------------------------------------------
@@ -204,7 +231,9 @@ done <"$INDEX_FILE"
 verify_pass() {
   local out="$1" device_path target expected actual
   : >"$out"
+  progress_task "Verifying every copy against the phone" "$total" 75 20
   while IFS= read -r device_path; do
+    progress_step "$device_path"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
     if [ ! -f "$target" ]; then
       printf '%s\tnot copied\n' "$device_path" >>"$out"
@@ -226,12 +255,14 @@ attempt=1
 verify_pass "$MISSING_FILE"
 while [ -s "$MISSING_FILE" ] && [ "$attempt" -lt "$PHOTO_PULL_RETRIES" ]; do
   failed_now=$(wc -l <"$MISSING_FILE" | tr -d ' ')
-  print_warning "$failed_now file(s) failed; retry $attempt of $((PHOTO_PULL_RETRIES - 1))"
+  progress_warn "$failed_now file(s) failed; retry $attempt of $((PHOTO_PULL_RETRIES - 1))"
+  progress_task "Retrying $failed_now file(s)" "$failed_now" 95 4
   while IFS= read -r line; do
     device_path="${line%%$'\t'*}"
     target="$(photo_local_target "$PHOTOS_DIR" "$device_path")"
     rm -f "$target"
     pull_one "$device_path" || true
+    progress_step "$device_path"
   done <"$MISSING_FILE"
   attempt=$((attempt + 1))
   verify_pass "$MISSING_FILE"
@@ -243,7 +274,14 @@ verified=$((total - missing))
 
 # Sum every "total" line: find -exec ... + may run wc more than once, and
 # taking only the last batch under-reported 24.8 GB as 1.4 GB.
+progress_phase 'Measuring what was written...' 99
 total_bytes=$(find "$PHOTOS_DIR" -type f -exec wc -c {} + 2>/dev/null | awk '/total$/ {s += $1} END {printf "%d", s}')
+
+# The bar comes down here, and everything held back while it owned the terminal
+# is printed: the discovery counts, and any retry warning. The summary below is
+# the part someone reads before wiping a phone, so it must not scroll past
+# inside a dialog that is about to be erased.
+progress_session_end
 
 {
   printf 'Photo and video backup\n\n'

@@ -3,6 +3,64 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.7.0
+
+### A progress bar for the long copies
+
+- Copying several thousand photos off a phone took an hour and reported one
+  line per 250 files. There was no way to tell a slow copy from a stalled one.
+- `adrescue photos` now runs inside a single `dialog` gauge from start to
+  finish. Every phase reports into it: the MediaStore query, the filesystem
+  sweep, reading a size for every file, the copy, the verification that
+  re-measures each file against the phone, each retry round, and the final
+  measurement. It shows the percentage, the count, and the file in flight.
+- Those first phases used to print plain lines and only then hand the terminal
+  to a progress bar, so the display changed shape twice in the middle of a
+  rescue, and the slowest step before the copy -- a size for every one of
+  several thousand files -- showed nothing at all. The bar now moves once,
+  forwards, across the whole run: it never goes backwards, even when a retry
+  round sends the verification pass round again, because a bar that goes
+  backwards reads as something having gone wrong at the worst possible moment.
+- The shared-storage copies draw into the gauge as well. `adb` prints its own
+  progress -- `[ 11%] /sdcard/Download/zoom.apk: 98%` -- straight to the
+  terminal, so once the photo bar closed the rest of the backup went back to
+  scrolling raw output. That percentage is now read back out and drawn in the
+  bar, with the file being pulled named beneath it.
+- The photos category shells out to a tool that draws its own gauge, so the
+  outer bar steps aside for it and returns afterwards. There is never more
+  than one dialog on the terminal.
+- An unreadable installed-app list is no longer reported as "no password
+  manager installed". Seen on a real run: adb dropped the device for one
+  command, `apps.txt` came back empty, every lookup answered "no", and the
+  manifest recorded "Recovery apps detected: 0" for a phone that had them --
+  so the owner was never offered the export step. It is now a named failure,
+  and the guidance file says the list could not be read.
+- A mistyped passphrase no longer throws the encrypted archive away. Two boxes
+  typed blind at the end of a long run got two attempts more before the
+  profile is given up on.
+- `adb backup` asks the owner to unlock the phone and confirm on the handset.
+  That instruction was hidden behind the gauge, so the run looked hung. The bar
+  steps aside for it, as it does for the photo tool.
+- "Skipping missing path" warnings no longer tear the gauge. A phone without
+  WhatsApp Business or Snapchat produces a dozen of them, and they were written
+  straight to the terminal underneath the bar.
+- If `dialog` itself dies mid-run, the copy carries on. Writing to a gauge
+  whose reader has gone raises `SIGPIPE`, and its default action killed the
+  whole script: exit 141, no report, no missing-files list, and the temporary
+  pipe left behind.
+- Anything the operator still needs after the bar comes down, such as the
+  discovery counts and any retry warning, is held back and printed then.
+  Writing it to the terminal while the gauge owned the screen would have torn
+  the display.
+- It degrades rather than disappears. With no terminal, no `dialog`, or
+  `ANDROID_RESCUE_PROGRESS=never`, the periodic lines are kept, which is what
+  belongs in a log anyway. `ANDROID_RESCUE_PROGRESS=always` forces the gauge.
+- The gauge is fed through a FIFO rather than `loop | dialog --gauge`. A piped
+  loop runs in a subshell, so every counter it increments is discarded when
+  the pipeline ends: the run would have reported "Copied this run: 0" having
+  copied everything. That number is the whole contract of this command, since
+  someone wipes a phone on the strength of it.
+
 ## 2026-09-21 — v0.6.3
 
 ### A recovery profile with no passwords in it is not a failed backup
@@ -30,6 +88,7 @@ notes from it and matches nothing else.
   (renamed from `test_backup_noninteractive.sh`) covers both attended and
   unattended runs; there was no attended coverage before, which is how this
   shipped.
+
 
 ## 2026-09-21 — v0.6.2
 

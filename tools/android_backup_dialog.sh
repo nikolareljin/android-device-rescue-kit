@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=tools/lib/device_screen.sh
 source "$SCRIPT_DIR/lib/device_screen.sh"
+# shellcheck source=tools/lib/progress.sh
+source "$SCRIPT_DIR/lib/progress.sh"
 
 require_tool adb || exit 1
 # Before a destination is chosen or a single file is created. An unreachable
@@ -244,18 +246,47 @@ pull_path() {
   local source_path="$1"
   local target_name="$2"
   local target_path="$BACKUP_ROOT/shared/$target_name"
+  local pull_status=0 pct
 
   if adb_shell_exists "$source_path"; then
     mkdir -p "$(dirname "$target_path")"
-    print_info "Pulling $source_path -> $target_path"
-    if adb pull -a "$source_path" "$target_path"; then
+    if progress_active; then
+      # adb prints its own progress -- "[ 11%] /sdcard/Download/zoom.apk: 98%"
+      # -- straight to the terminal, which tore through the gauge. Its overall
+      # percentage is read back out and drawn instead.
+      #
+      # The reader runs in a subshell, which is fine here: it only draws. The
+      # pull's exit status comes from PIPESTATUS, because this script runs
+      # without pipefail on purpose.
+      progress_phase "Pulling $(basename "$source_path")" ""
+      adb pull -a "$source_path" "$target_path" 2>&1 | while IFS= read -r line; do
+        case "$line" in
+          \[*%\]*)
+            pct="${line#\[}"; pct="${pct%%%*}"; pct="${pct// /}"
+            case "$pct" in
+              ''|*[!0-9]*) ;;
+              *) progress_within "$pct" "${line#*] }" ;;
+            esac
+            ;;
+        esac
+      done
+      pull_status="${PIPESTATUS[0]}"
+    else
+      print_info "Pulling $source_path -> $target_path"
+      adb pull -a "$source_path" "$target_path"
+      pull_status=$?
+    fi
+    if [ "$pull_status" -eq 0 ]; then
       log_manifest "OK $source_path -> shared/$target_name"
     else
       log_manifest "FAILED $source_path -> shared/$target_name"
       BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
     fi
   else
-    print_warning "Skipping missing path: $source_path"
+    # print_warning would write straight to the terminal underneath an open
+    # gauge. A phone without WhatsApp Business or Snapchat produces a dozen of
+    # these, and they shredded the display into overlapping fragments.
+    progress_warn "Skipping missing path: $source_path"
     log_manifest "MISSING $source_path"
   fi
 }
@@ -371,7 +402,11 @@ launch_app() {
 
 open_recovery_apps() {
   [ "${#DETECTED_APPS[@]}" -gt 0 ] || {
-    log_manifest "SKIPPED opening recovery apps: none detected"
+    if [ "${APPS_LIST_USABLE:-1}" -eq 0 ]; then
+      log_manifest "SKIPPED opening recovery apps: the installed-app list could not be read"
+    else
+      log_manifest "SKIPPED opening recovery apps: none detected"
+    fi
     return 0
   }
 
@@ -495,10 +530,23 @@ collect_recovery_profile() {
     printf '%s\n  %s\n' "$name ($pkg)" "$hint" >>"$profile_root/recovery_actions.txt"
   done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$RECOVERY_APPS_FILE" 2>/dev/null)
 
-  if [ "${#DETECTED_APPS[@]}" -eq 0 ]; then
+  # An empty apps.txt answers every has_package with "no", so a phone whose
+  # package list could not be read reported zero managers exactly like a phone
+  # that has none. Seen on a real run: adb dropped the device for one command,
+  # apps.txt came back empty, and the manifest recorded "Recovery apps
+  # detected: 0" for a phone that had them. The owner is then never offered the
+  # export step at all.
+  APPS_LIST_USABLE=1
+  if [ ! -s "$profile_root/apps.txt" ] || ! grep -q '^package:' "$profile_root/apps.txt"; then
+    APPS_LIST_USABLE=0
+    BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+    log_manifest "FAILED recovery app detection: the installed-app list is empty or unreadable"
+    printf '%s\n' "The installed-app list could not be read, so no password manager could be detected. Open yours by hand and run its export before wiping the phone." >>"$profile_root/recovery_actions.txt"
+    progress_warn "Could not read the installed app list; no password manager could be detected."
+  elif [ "${#DETECTED_APPS[@]}" -eq 0 ]; then
     printf '%s\n' "No known password manager or authenticator was detected on this device." >>"$profile_root/recovery_actions.txt"
   fi
-  log_manifest "Recovery apps detected: ${#DETECTED_APPS[@]}"
+  log_manifest "Recovery apps detected: ${#DETECTED_APPS[@]} (app list usable: $APPS_LIST_USABLE)"
   chmod 600 "$profile_root/recovery_actions.txt"
   if adb shell "su -c id" >/dev/null 2>&1; then
     ui_yesno "Root-only System Sources" "Root is available. Collect only readable known Android Wi-Fi system records? No app-private database scan will be performed." no && {
@@ -628,7 +676,27 @@ collect_recovery_profile() {
     encryption_declined "CANCELLED recovery profile encryption confirmation" "$credential_count" "$profile_root"
     return $?
   fi
-  if [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; then unset passphrase confirmation; log_manifest "FAILED recovery profile encryption: passphrase mismatch"; return 1; fi
+  # Two boxes typed blind, at the end of a long run. Getting it wrong threw
+  # away the encrypted archive entirely and reported a failed profile, with no
+  # way back but to run the whole backup again.
+  passphrase_tries=1
+  while [ -z "$passphrase" ] || [ "$passphrase" != "$confirmation" ]; do
+    log_manifest "RETRY recovery profile passphrase (attempt $passphrase_tries did not match)"
+    if [ "$passphrase_tries" -ge 3 ]; then
+      unset passphrase confirmation
+      log_manifest "FAILED recovery profile encryption: passphrase mismatch"
+      return 1
+    fi
+    passphrase_tries=$((passphrase_tries + 1))
+    if ! passphrase=$(dialog --stdout --title "Passphrases Did Not Match" --passwordbox "The two entries were different, or empty.\n\nCreate a passphrase for the encrypted recovery archive." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+      encryption_declined "CANCELLED recovery profile encryption" "$credential_count" "$profile_root"
+      return $?
+    fi
+    if ! confirmation=$(dialog --stdout --title "Confirm Passphrase" --passwordbox "Re-enter the recovery archive passphrase." "$MESSAGE_HEIGHT" "$MESSAGE_WIDTH"); then
+      encryption_declined "CANCELLED recovery profile encryption confirmation" "$credential_count" "$profile_root"
+      return $?
+    fi
+  done
   # This script runs without pipefail, so `tar | gpg` reported only gpg's status.
   # If tar died part-way -- destination full, an unreadable file, a partial adb
   # pull, a NAS hiccup -- gpg happily encrypted the truncated stream and exited
@@ -774,18 +842,49 @@ if [ "$RECOVERY_PROFILE" -eq 1 ]; then
   screen_hold_end
 fi
 
+# One gauge for the copying, opened only now: every prompt, consent and
+# passphrase is behind us, and a dialog cannot be drawn over a dialog.
+#
+# A PIPE trap and nothing else. The EXIT, INT and TERM traps belong to
+# screen_hold_end, which puts a phone's stay-awake setting back, and replacing
+# them to add cleanup here would leave a stranger's phone set to never sleep.
+# SIGPIPE is untaken, and without it a dialog that dies mid-copy kills this
+# script outright before the manifest is finished.
+trap 'progress_session_end' PIPE
+progress_session_begin "Backing up shared data"
+choice_total=0
+for choice in $CHOICES; do choice_total=$((choice_total + 1)); done
+[ "$choice_total" -gt 0 ] || choice_total=1
+choice_index=0
+
 for choice in $CHOICES; do
+  choice_base=$((choice_index * 100 / choice_total))
+  choice_span=$((100 / choice_total))
+  choice_index=$((choice_index + 1))
+  progress_band "$choice" "$choice_base" "$choice_span"
   case "$choice" in
     photos)
       # Discovery, not a path list. DCIM/Pictures/Movies misses the removable
       # card, vendor gallery folders, received app media and any folder the
       # owner made themselves. android_photo_backup.sh enumerates through
       # MediaStore and a filesystem sweep, then verifies every file it claims.
+      # android_photo_backup.sh draws its own gauge, and two dialogs cannot
+      # share one terminal. Ours comes down for the duration and goes back up
+      # afterwards, so there is always exactly one bar on screen.
+      photos_resume=0
+      if progress_active; then
+        progress_session_end
+        photos_resume=1
+      fi
       if "$SCRIPT_DIR/android_photo_backup.sh" "$BACKUP_ROOT"; then
         log_manifest "OK photos verified (see photos_report.txt)"
       else
         log_manifest "FAILED photos incomplete (see missing_photos.txt)"
         BACKUP_FAILURES=$((BACKUP_FAILURES + 1))
+      fi
+      if [ "$photos_resume" -eq 1 ]; then
+        progress_session_begin "Backing up shared data"
+        progress_band "$choice" "$choice_base" "$choice_span"
       fi
       ;;
     downloads)
@@ -820,15 +919,30 @@ for choice in $CHOICES; do
       # Already handled above, before the copies.
       ;;
     adb_backup)
-      print_warning 'Trying deprecated adb backup. Confirm on the phone if prompted.'
+      # adb backup prints its own deprecation warning and then asks the owner
+      # to unlock the phone and confirm on the handset. Behind a gauge that
+      # instruction is invisible, and the run looks hung at 88% while the phone
+      # waits to be tapped. The bar steps aside, as it does for the photo tool.
+      backup_resume=0
+      if progress_active; then
+        progress_session_end
+        backup_resume=1
+      fi
+      print_warning 'Trying deprecated adb backup. Unlock the phone and confirm there when prompted.'
       if adb backup -apk -obb -shared -all -f "$BACKUP_ROOT/adb_backup.ab"; then
         log_manifest "OK adb_backup.ab"
       else
         log_manifest "FAILED adb_backup.ab"
       fi
+      if [ "$backup_resume" -eq 1 ]; then
+        progress_session_begin "Backing up shared data"
+        progress_band "$choice" "$choice_base" "$choice_span"
+      fi
       ;;
   esac
 done
+
+progress_session_end
 
 cat >>"$MANIFEST" <<EOF
 

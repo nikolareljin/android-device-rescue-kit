@@ -320,6 +320,53 @@ check "empty device exits 0" "0" "$rc"
 check "empty device says so" "1" \
   "$(grep -c 'No photos or videos found' "$BK/photos_report.txt" | tr -d ' ')"
 
+# --- the same run, with the progress gauge drawing -------------------------
+#
+#     The gauge is fed through a FIFO rather than `loop | dialog --gauge`,
+#     because a piped loop runs in a subshell and every counter it increments
+#     dies with it. That would report "Copied this run: 0" for a run that
+#     copied everything -- and the number this tool reports is the whole
+#     contract: someone wipes a phone on the strength of it.
+
+cat >"$BIN/dialog" <<'GAUGE'
+#!/usr/bin/env bash
+cat >/dev/null
+GAUGE
+chmod +x "$BIN/dialog"
+
+GAUGE_ROOT="$WORK/gauge_backup"
+mkdir -p "$GAUGE_ROOT"
+rc="$(ANDROID_RESCUE_PROGRESS=always run_backup "$GAUGE_ROOT")"
+check "gauge run exits 0" "0" "$rc"
+check "gauge run copied every file" "$(index_count "$GAUGE_ROOT")" "$(copied_count "$GAUGE_ROOT")"
+check "gauge run reports what it copied, not zero" "0" \
+  "$(grep -cE '^Copied this run           : 0$' "$GAUGE_ROOT/photos_report.txt")"
+check "gauge run verified every file" "0" \
+  "$(grep -cE '^MISSING  *: [1-9]' "$GAUGE_ROOT/photos_report.txt")"
+
+# --- the gauge dies mid-run ------------------------------------------------
+#
+#     Writing to a FIFO whose reader has gone raises SIGPIPE, and its default
+#     action kills the script outright: exit 141, with neither the fallback on
+#     that write nor the EXIT trap running, so no report and no missing-files
+#     list were written at all. An hour-long copy gives dialog plenty of time
+#     to be killed, and losing the run's diagnostics is the expensive part.
+
+cat >"$BIN/dialog" <<'DEAD'
+#!/usr/bin/env bash
+exit 0
+DEAD
+chmod +x "$BIN/dialog"
+DEAD_ROOT="$WORK/dead_gauge"
+mkdir -p "$DEAD_ROOT"
+rc="$(ANDROID_RESCUE_PROGRESS=always run_backup "$DEAD_ROOT")"
+check "a dead gauge does not kill the run" "0" "$rc"
+check "and the report is still written" "present" \
+  "$([ -s "$DEAD_ROOT/photos_report.txt" ] && echo present || echo absent)"
+check "with the real totals, not zero" "0" \
+  "$(grep -cE '^Copied this run           : 0$' "$DEAD_ROOT/photos_report.txt")"
+rm -f "$BIN/dialog"
+
 # ---------------------------------------------------------------------------
 
 if [ "$FAILURES" -eq 0 ]; then
