@@ -3,6 +3,23 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-22 — v0.7.1
+
+### Screenshots on the site, and a terminal left readable
+
+- The documentation site now shows what the tool looks like: the probe, the
+  copy gauge, the shared-storage gauge, the closing summary, `adrescue config`
+  and the command list.
+- They are not mock-ups and they are not from anyone's phone.
+  `scripts/make_screenshots.sh` builds a fake device -- invented file names, an
+  invented destination, no hardware -- runs the real scripts against it under
+  Xvfb, and captures the real dialogs. Regenerating them is one command, so a
+  picture cannot quietly stop matching the program.
+- `dialog` leaves its last frame on the screen when it exits, so the closing
+  summary -- what was copied, what is missing, where it went -- printed into
+  the middle of a dead progress box. The session now clears the screen when the
+  bar comes down. That is the part someone reads before wiping a phone.
+
 ## 2026-09-21 — v0.7.0
 
 ### A progress bar for the long copies
