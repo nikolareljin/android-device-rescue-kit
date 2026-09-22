@@ -124,10 +124,14 @@ Plug the phone in with USB debugging enabled. Nothing else is required.
 Every command does, `data` and `restore` included.
 
 Both are built on `dialog`, which Git for Windows has no package manager to
-install. Rather than requiring it, the prompts fall back to plain text: the
-same questions, numbered, answered at the keyboard. Nothing about what gets
-copied changes, and `ANDROID_RESCUE_UI=text` selects the plain prompts
-anywhere, which is also how they are tested.
+install. There the prompts fall back to plain text: the same questions,
+numbered, answered at the keyboard. Nothing about what gets copied changes.
+
+The fallback is specific to that. On Linux and macOS `dialog` is still
+required, because `scripts/install_deps.sh` installs it there and its absence
+means the install is broken rather than the platform being limited. Set
+`ANDROID_RESCUE_UI=text` to use the plain prompts anywhere regardless, which is
+also how they are tested.
 
 A switch cannot be passed through `iex`, which takes its command from the
 pipeline and has no parameters of its own. Download the script into a block and

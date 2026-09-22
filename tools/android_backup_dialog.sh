@@ -19,7 +19,7 @@ adb start-server >/dev/null 2>&1 || true
 require_device || exit 1
 # Was `require_dialog || exit 1`. The prompts fall back now, so there is
 # nothing to refuse.
-ui_init
+ui_init || exit 1
 
 # --- ui layer --------------------------------------------------------------
 #

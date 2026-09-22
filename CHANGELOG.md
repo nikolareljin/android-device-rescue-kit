@@ -18,6 +18,20 @@ asking them.
   widgets: message, yes/no, menu, radio list, check list, input and passphrase.
   `ANDROID_RESCUE_UI=text` forces the plain prompts anywhere, which is how they
   are tested on a machine that has dialog installed.
+- **dialog is still required on Linux and macOS.** The text backend is not a
+  general substitute for it. `scripts/install_deps.sh` installs dialog on those
+  platforms, so its absence means a broken install, and quietly serving plain
+  prompts would hide that: the operator would get a worse tool and no reason
+  why. Missing there is refused, with the override named in the message. The
+  fallback is automatic only where dialog cannot be installed at all, which is
+  Git Bash on Windows, and it says so when it happens. Three situations, and
+  the suite holds all three apart:
+
+  | Platform | dialog | Result |
+  |---|---|---|
+  | Linux, macOS | missing | refused, and says how to install it or override |
+  | Git Bash on Windows | missing | plain prompts, announced |
+  | anywhere | `ANDROID_RESCUE_UI=text` | plain prompts, silently, because it was asked for |
 - It keeps dialog's contract exactly, because every caller was written against
   it: the answer on stdout and nothing else, prompts on stderr, non-zero for
   cancel. A fallback that printed its menu to stdout would put the menu into

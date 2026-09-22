@@ -13,7 +13,7 @@ require_tool adb || exit 1
 # Not a dialog check. This used to be `require_dialog || exit 1`, which made
 # restore the one command with no path at all on a machine without dialog --
 # Git Bash on Windows being the case that matters.
-ui_init
+ui_init || exit 1
 
 if [ -z "$BACKUP_ROOT" ] || [ ! -d "$BACKUP_ROOT/shared" ]; then
   printf 'Usage: %s <backup-directory>\n' "${ANDROID_RESCUE_CMD:-tools/android_restore_dialog.sh}" >&2

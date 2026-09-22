@@ -13,6 +13,19 @@
 # reach a dialog that happens to be installed on the machine running this. A
 # stub that exits non-zero would prove something weaker, because a flow could
 # still be branching on its failure rather than never calling it.
+#
+# Absent dialog is not one situation but three, and they must not behave the
+# same:
+#
+#   Linux/macOS, nothing asked for  ->  refuse. install_deps.sh installs dialog
+#                                       there, so missing means broken, and
+#                                       plain prompts would hide it.
+#   Git Bash on Windows             ->  fall back. There is no package manager
+#                                       to install dialog with.
+#   ANDROID_RESCUE_UI=text          ->  fall back anywhere. Asked for.
+#
+# The Windows case is reached with a stubbed `uname` on the isolated PATH,
+# which is the only part of the platform any of this reads.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -54,15 +67,58 @@ else
   pass
 fi
 
+# UI_WANTED empty means "ask for nothing", which is what makes the refusal
+# reachable. Set to text it is the explicit override.
+UI_WANTED=""
 run_isolated() {
-  # MOCK_* reach the mock adb; ANDROID_RESCUE_UI is not set, so the backend is
-  # chosen by whether dialog is found, which is the thing under test.
   env -i \
     PATH="$BIN" HOME="$WORK/home" TERM=dumb \
     MOCK_DEVICE="$DEVICE" MOCK_WORK="$WORK" \
     ANDROID_RESCUE_PROGRESS=never \
+    ${UI_WANTED:+ANDROID_RESCUE_UI="$UI_WANTED"} \
     bash "$@"
 }
+
+# Swap the platform `uname` reports, which is all ui.sh reads of it.
+as_windows() {
+  rm -f "$BIN/uname"
+  printf '#!/usr/bin/env bash\nprintf "MINGW64_NT-10.0\\n"\n' >"$BIN/uname"
+  chmod +x "$BIN/uname"
+}
+as_linux() {
+  rm -f "$BIN/uname"
+  ln -sf "$(command -v uname)" "$BIN/uname"
+}
+as_linux
+
+# --- the refusal, where dialog is installable -------------------------------
+
+BACKUP_R="$WORK/backup_refuse"
+mkdir -p "$BACKUP_R/shared/DCIM"
+printf 'x\n' >"$BACKUP_R/shared/DCIM/nope.jpg"
+
+out="$(printf '\n' | run_isolated tools/android_restore_dialog.sh "$BACKUP_R" 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then pass; else note "restore ran with dialog missing on a platform that can install it"; fi
+if printf '%s' "$out" | grep -q 'dialog is required'; then
+  pass
+else
+  note "the refusal did not say dialog is required: $(printf '%s' "$out" | head -1)"
+fi
+# It has to name the way out, or the operator is stuck.
+if printf '%s' "$out" | grep -q 'ANDROID_RESCUE_UI=text'; then
+  pass
+else
+  note "the refusal did not mention the override"
+fi
+if [ -e "$DEVICE/storage/emulated/0/DCIM/nope.jpg" ]; then
+  note "a refused restore still wrote to the phone"
+else
+  pass
+fi
+
+# Everything below runs where the fallback is legitimate.
+as_windows
 
 # --- restore ----------------------------------------------------------------
 
@@ -146,6 +202,8 @@ fi
 #     The fallback must not become the only path that works. dialog is driven
 #     here by a stub that answers, rather than one that fails.
 
+as_linux
+
 cat >"$BIN/dialog" <<'STUB'
 #!/usr/bin/env bash
 # Answers whatever is asked: the tags for a checklist, the default for a
@@ -186,6 +244,31 @@ if [ -f "$DEVICE/storage/emulated/0/DCIM/IMG_9999.jpg" ]; then
 else
   note "restore through dialog did not push anything"
 fi
+
+# --- the override works where the refusal would otherwise apply -------------
+#
+#     Same platform as the refusal above, same missing dialog. The only
+#     difference is that it was asked for, which is what makes the refusal a
+#     policy rather than an obstacle.
+
+as_linux
+UI_WANTED=text
+rm -f "$DEVICE/storage/emulated/0/DCIM/IMG_9999.jpg"
+out="$(printf '\n' | run_isolated tools/android_restore_dialog.sh "$BACKUP" 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ]; then pass; else note "ANDROID_RESCUE_UI=text was refused on Linux: $(printf '%s' "$out" | head -1)"; fi
+if [ -f "$DEVICE/storage/emulated/0/DCIM/IMG_9999.jpg" ]; then
+  pass
+else
+  note "the override ran but pushed nothing"
+fi
+# Asked for is not the same as unavailable, so it must not announce a fallback.
+if printf '%s' "$out" | grep -q 'prompts are plain text'; then
+  note "an explicitly requested text UI announced itself as a fallback"
+else
+  pass
+fi
+UI_WANTED=""
 
 if [ "$failures" -eq 0 ]; then
   printf 'dialogless: %s checks passed\n' "$checks"

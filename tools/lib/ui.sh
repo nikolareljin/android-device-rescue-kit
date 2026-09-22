@@ -34,16 +34,40 @@
 # command substitution to survive -- `[ "$(ui_backend)" = dialog ]` runs in a
 # subshell, so an assignment made in there is discarded and the memo never
 # takes. That is why ui_is_dialog reads the variable rather than the output.
+#
+# The text backend is not a general substitute for dialog. On Linux and macOS
+# scripts/install_deps.sh installs dialog, so its absence means the install is
+# broken, and quietly serving plain prompts would hide that -- the operator
+# would get a worse tool and no reason why. It is a fallback only where dialog
+# cannot be installed at all, which is Git Bash on Windows: a trimmed MSYS2
+# userland with no package manager. Anywhere else it has to be asked for.
+#
+# UI_BACKEND_REASON records which of those happened, because ui_init has to
+# tell "text because Windows" apart from "text because something is missing".
 UI_BACKEND="${UI_BACKEND:-}"
+UI_BACKEND_REASON=""
+
+ui_platform_lacks_dialog() {
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 ui_resolve_backend() {
   [ -n "$UI_BACKEND" ] && return 0
   if [ -n "${ANDROID_RESCUE_UI:-}" ]; then
     UI_BACKEND="$ANDROID_RESCUE_UI"
+    UI_BACKEND_REASON=requested
   elif command -v dialog >/dev/null 2>&1; then
     UI_BACKEND=dialog
+    UI_BACKEND_REASON=present
+  elif ui_platform_lacks_dialog; then
+    UI_BACKEND=text
+    UI_BACKEND_REASON=uninstallable
   else
     UI_BACKEND=text
+    UI_BACKEND_REASON=missing
   fi
   return 0
 }
@@ -51,13 +75,24 @@ ui_resolve_backend() {
 ui_backend() { ui_resolve_backend; printf '%s\n' "$UI_BACKEND"; }
 ui_is_dialog() { ui_resolve_backend; [ "$UI_BACKEND" = "dialog" ]; }
 
-# Replaces check_if_dialog_installed at the top of an interactive tool. There
-# is nothing left to refuse: with dialog absent the prompts fall back instead
-# of the command stopping, which is the whole point of this file.
+# Replaces check_if_dialog_installed at the top of an interactive tool, and
+# still refuses where refusing is right. Returns non-zero when dialog is
+# missing on a platform that can install it, because that is a broken install
+# rather than a supported configuration, and the plain prompts would hide it.
 ui_init() {
+  ui_resolve_backend
+  if [ "$UI_BACKEND_REASON" = "missing" ]; then
+    print_error "dialog is required. Run scripts/install_deps.sh or install dialog manually."
+    printf '  It is installable on this platform, so it is missing rather than unavailable.\n' >&2
+    printf '  To use the plain-text prompts anyway: ANDROID_RESCUE_UI=text\n' >&2
+    return 1
+  fi
   if ui_is_dialog; then
     dialog_init
   else
+    if [ "$UI_BACKEND_REASON" = "uninstallable" ]; then
+      print_info "dialog is not available here, so the prompts are plain text."
+    fi
     : "${DIALOG_WIDTH:=74}" "${DIALOG_HEIGHT:=24}"
     export DIALOG_WIDTH DIALOG_HEIGHT
   fi
