@@ -3,6 +3,27 @@
 Header format is `## YYYY-MM-DD — vX.Y.Z`. `ci-helpers` extracts GitHub Release
 notes from it and matches nothing else.
 
+## 2026-09-21 — v0.6.3
+
+### A recovery profile with no passwords in it is not a failed backup
+
+- Reported from a real run. The owner keeps passwords in their Google account,
+  so they selected no credential provider. Everything else was captured, and
+  the run still ended with **"Recovery profile was not completed"** and exit 1.
+  The profile had in fact been captured in full; what the user declined was the
+  passphrase for an archive that had nothing secret to hold.
+- Declining the passphrase is now a choice rather than a failure when no
+  credential export was imported. The readable profile is the deliverable, and
+  the run says where it is and that it is unencrypted. With exports present the
+  run still fails, because someone's passwords are then sitting in the clear.
+- A failed recovery profile no longer aborts the whole backup. Photos,
+  downloads and everything else the user selected had not run yet, and
+  abandoning them protects nothing. The failure is counted and reported by the
+  closing summary, which still exits non-zero.
+- `--non-interactive` promised never to reach a dialog and then asked for a
+  passphrase, so an unattended `--recovery-profile` run could not finish unless
+  `--no-encrypt` was passed as well. It no longer asks.
+
 ## 2026-09-21 — v0.6.2
 
 ### The analysis prompt is private

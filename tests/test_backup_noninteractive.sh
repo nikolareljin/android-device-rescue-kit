@@ -446,6 +446,53 @@ check "and says why" "1" "$(grep -c 'requires --select' "$WORK/out2.txt")"
 
 # ---------------------------------------------------------------------------
 
+# --- a recovery profile with no credentials is complete --------------------
+#
+#     Reported from a real run: the owner keeps passwords in their Google
+#     account, so they selected no credential provider. Everything else was
+#     captured, and the run still ended with "Recovery profile was not
+#     completed" and exit 1, abandoning the categories that had not run yet.
+#     Encryption is what failed, and with nothing secret to protect, declining
+#     it is a choice rather than a failure.
+
+BK6="$WORK/backup6"; mkdir -p "$BK6"
+: >"$WORK/dialog_calls.txt"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK6" \
+    --recovery-profile --non-interactive --select recovery_profile,downloads \
+    >"$WORK/out6.txt" 2>&1 )
+check "no credentials, encryption not set: exits 0" "0" "$?"
+check "the profile was still captured" "present" \
+  "$([ -s "$BK6/recovery_profile/settings_system.txt" ] && echo present || echo absent)"
+check "the other categories still ran" "present" \
+  "$([ -d "$BK6/shared/Download" ] && echo present || echo absent)"
+check "it is not reported as a failure" "0" \
+  "$(grep -c 'FAILED recovery profile' "$BK6/backup_manifest.txt")"
+check "and the manifest says the profile is readable" "1" \
+  "$(grep -c 'PLAINTEXT profile at' "$BK6/backup_manifest.txt")"
+# --non-interactive promises never to reach a dialog. Asking for a passphrase
+# broke that promise, and with no terminal to answer it an unattended
+# --recovery-profile run could not complete unless --no-encrypt was passed too.
+check "no dialog was reached for the passphrase" "" "$(cat "$WORK/dialog_calls.txt")"
+
+# --- with credentials, declining encryption is still a failure -------------
+#
+#     Same path, but now the profile holds someone's passwords in the clear.
+#     That must still fail -- and must still let the rest of the backup finish,
+#     because abandoning it protects nothing.
+
+BK7="$WORK/backup7"; mkdir -p "$BK7"
+( cd "$ROOT" && bash tools/android_backup_dialog.sh "$BK7" \
+    --recovery-profile --non-interactive --select recovery_profile,downloads \
+    --credential-export /sdcard/Download/passwords.csv \
+    >"$WORK/out7.txt" 2>&1 )
+check "credentials present, no encryption: exits non-zero" "1" "$?"
+check "the failure is named in the manifest" "1" \
+  "$(grep -c 'FAILED recovery profile' "$BK7/backup_manifest.txt")"
+check "the credential export was still imported" "present" \
+  "$([ -s "$BK7/recovery_profile/imports/passwords.csv" ] && echo present || echo absent)"
+check "and the rest of the backup still ran" "present" \
+  "$([ -d "$BK7/shared/Download" ] && echo present || echo absent)"
+
 if [ "$FAILURES" -eq 0 ]; then
   printf 'backup_noninteractive: %d checks passed\n' "$TESTS"
 else
