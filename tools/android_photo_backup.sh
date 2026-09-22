@@ -84,6 +84,15 @@ discover_sweep() {
 # lines and only then hand the terminal to a progress bar, so the display
 # changed shape twice in the middle of a rescue.
 progress_session_begin "Photo and video rescue"
+# Ctrl-C during an hour-long copy must not leave the gauge holding the terminal
+# or a FIFO in /tmp. The traps live here rather than in the library: a library
+# that installs its own EXIT trap silently replaces whatever the caller had, and
+# android_backup_dialog.sh already relies on one to put a phone's screen setting
+# back. progress_session_end is idempotent, so the normal path calling it too is
+# harmless.
+trap 'progress_session_end' EXIT
+trap 'progress_session_end; exit 130' INT
+trap 'progress_session_end; exit 143' TERM
 progress_phase 'Discovering photos through MediaStore...' 2
 discover_mediastore >"$WORK_DIR/mediastore.txt" 2>/dev/null || true
 progress_phase 'Sweeping the filesystem for anything MediaStore missed...' 8

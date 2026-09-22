@@ -134,4 +134,43 @@ case "$out" in
 esac
 pass
 
+# A task that overruns the total it declared must not walk past its band. The
+# retry round counts the lines of a file that the round itself rewrites.
+out="$(bash -c '
+  source "'"$ROOT"'/tools/lib/progress.sh"
+  PROGRESS_BASE=20; PROGRESS_SPAN=55; PROGRESS_TOTAL=4; PROGRESS_DONE=0; PROGRESS_ACTIVE=0
+  for i in 1 2 3 4 5 6 7 8; do progress_step >/dev/null; printf "%s " "$PROGRESS_PCT"; done
+')"
+case "$out" in
+  *1[0-9][0-9]*) fail "percentage ran past 100: $out" ;;
+esac
+grep -Fq '75 75' <<<"$out" || fail "an overrunning task must stop at base+span, got: $out"
+pass
+
+# Below four characters there is no room for an ellipsis, and the negative
+# offset turned positive: width 2 used to return the whole string.
+for w in 1 2 3 4 8; do
+  got="$(bash -c '
+    source "'"$ROOT"'/tools/lib/progress.sh"
+    progress_shorten "/storage/emulated/0/DCIM/Camera/IMG_20260921_120000.jpg" '"$w"'
+  ')"
+  [ "${#got}" -le "$w" ] || fail "width $w produced ${#got} chars: $got"
+done
+pass
+
+# The interrupt path leaves nothing behind. progress_session_end is idempotent,
+# so a trap firing after a clean end is harmless.
+out="$(PATH="$WORK/bin:$PATH" ANDROID_RESCUE_PROGRESS=always bash -c '
+  source "'"$ROOT"'/tools/lib/common.sh"
+  source "'"$ROOT"'/tools/lib/progress.sh"
+  progress_session_begin "Rescue"
+  progress_task "Copying" 10 0 100
+  progress_step one
+  progress_session_end
+  progress_session_end
+  printf "ok\n"
+' 2>&1)" || fail 'calling session_end twice must be safe' "$out"
+grep -Fq 'ok' <<<"$out" || fail 'session_end is idempotent' "$out"
+pass
+
 printf 'progress: %s checks passed\n' "$checks"

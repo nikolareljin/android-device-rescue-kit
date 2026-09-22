@@ -55,9 +55,16 @@ progress_shorten() {
     local text="$1" width="${2:-56}"
     if [ "${#text}" -le "$width" ]; then
         printf '%s' "$text"
-    else
-        printf '...%s' "${text: -$((width - 3))}"
+        return 0
     fi
+    # Below four characters there is no room for the ellipsis, and the negative
+    # offset would turn positive: "${text: -$((2 - 3))}" is "${text:1}", which
+    # returned a string longer than the width it was asked for.
+    if [ "$width" -lt 4 ]; then
+        printf '%s' "${text: -width}"
+        return 0
+    fi
+    printf '...%s' "${text: -$((width - 3))}"
 }
 
 progress_draw() {
@@ -127,6 +134,12 @@ progress_step() {
     PROGRESS_DONE=$((PROGRESS_DONE + 1))
     if [ "$PROGRESS_TOTAL" -gt 0 ]; then
         PROGRESS_PCT=$((PROGRESS_BASE + PROGRESS_DONE * PROGRESS_SPAN / PROGRESS_TOTAL))
+        # A task can overrun the total it declared -- the retry round counts the
+        # lines of a file that the round itself rewrites. Unclamped this walked
+        # past 100 (102, 116, 130) and dialog was asked to draw it.
+        [ "$PROGRESS_PCT" -gt $((PROGRESS_BASE + PROGRESS_SPAN)) ] \
+            && PROGRESS_PCT=$((PROGRESS_BASE + PROGRESS_SPAN))
+        [ "$PROGRESS_PCT" -gt 100 ] && PROGRESS_PCT=100
     fi
 
     if [ "$PROGRESS_ACTIVE" -eq 1 ]; then
